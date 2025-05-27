@@ -1,0 +1,44 @@
+{
+  "name": "pulsenet",
+  "version": "1.0.0",
+  "description": "نرم‌افزار مانیتورینگ پینگ به صورت لحظه‌ای",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "ping": "^0.4.4",
+    "is-admin": "^3.0.0"
+  },
+  "build": {
+    "appId": "com.pulsenet.app",
+    "productName": "PulseNet",
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    }
+  },
+  "win": {
+    "target": "nsis",
+    "icon": "assets/icon.ico"
+  },
+  "nsis": {
+    "oneClick": true,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "PulseNet"
+  }
+}
