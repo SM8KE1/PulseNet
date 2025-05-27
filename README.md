@@ -1,57 +1,85 @@
-# 🚀 Pinging
+# PulseNet
 
-یک نرم‌افزار مدرن برای مانیتورینگ لحظه‌ای پینگ به سرورهای مختلف
+نرم‌افزار مانیتورینگ پینگ به صورت لحظه‌ای
 
-## ✨ ویژگی‌ها
+[![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet-/releases)
+[![macOS](https://img.shields.io/badge/macOS-Coming%20Soon-orange)](https://github.com/SM8KE1/PulseNet-/releases)
+[![Linux](https://img.shields.io/badge/Linux-Coming%20Soon-orange)](https://github.com/SM8KE1/PulseNet-/releases)
 
-- 🎯 نمایش پینگ به سرورهای مهم
-  - Google DNS (8.8.8.8)
-  - Cloudflare DNS (1.1.1.1)
-  - Time.ir
-  - YouTube (104.155.178.105)
-- ⚡ بروزرسانی لحظه‌ای
-- 🎨 رابط کاربری مدرن با تم تیره
-- 🛡️ پشتیبانی از دسترسی ادمین
-- 💻 سازگار با ویندوز
+## ویژگی‌ها
 
-## 🚀 نصب و راه‌اندازی
+- مانیتورینگ لحظه‌ای پینگ
+- نمایش نمودار پینگ
+- اعلان‌های هشدار
+- رابط کاربری ساده و کاربرپسند
 
-1. فایل `pinging Setup.exe` را از پوشه `dist` دانلود کنید
-2. برنامه را با دسترسی ادمین اجرا کنید
-3. اجازه نصب را به برنامه بدهید
-4. برنامه را از منوی استارت یا دسکتاپ اجرا کنید
+## دانلود
 
-## 🛠️ توسعه
+### ویندوز
+- [PulseNet Setup.exe](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.Setup.exe) - نسخه نصب
+- [PulseNet Portable.zip](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.Portable.zip) - نسخه قابل حمل
+- [PulseNet.msi](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.msi) - نسخه MSI
 
-برای توسعه و ساخت برنامه:
+### مک
+- [PulseNet.dmg](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.dmg) - نسخه نصب
+- [PulseNet.zip](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet-mac.zip) - نسخه فشرده
 
+### لینوکس
+- [PulseNet.AppImage](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.AppImage) - نسخه AppImage
+- [PulseNet.deb](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.deb) - نسخه Debian/Ubuntu
+- [PulseNet.rpm](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.rpm) - نسخه Red Hat/Fedora
+
+> **نکته**: نسخه‌های مک و لینوکس به زودی منتشر خواهند شد.
+
+## نصب
+
+### ویندوز
+1. فایل `PulseNet Setup.exe` را دانلود کنید
+2. فایل را اجرا کنید
+3. مراحل نصب را دنبال کنید
+
+### نسخه قابل حمل (Portable)
+1. فایل `PulseNet Portable.zip` را دانلود کنید
+2. فایل را از حالت فشرده خارج کنید
+3. فایل `PulseNet.exe` را اجرا کنید
+
+## نیازمندی‌ها
+
+- ویندوز 10 یا بالاتر
+- دسترسی به اینترنت
+- دسترسی ادمین (برای برخی قابلیت‌ها)
+
+## توسعه
+
+### نصب وابستگی‌ها
 ```bash
-# نصب وابستگی‌ها
 npm install
-
-# اجرای برنامه در حالت توسعه
-npm start
-
-# ساخت نسخه نهایی
-npm run build
 ```
 
-## 📝 نیازمندی‌ها
+### اجرا در حالت توسعه
+```bash
+npm start
+```
 
-- Node.js
-- npm
-- دسترسی ادمین برای اجرای پینگ
+### ساخت نسخه نهایی
+```bash
+# ساخت برای ویندوز
+npm run build:win
 
-## 🤝 مشارکت
+# ساخت برای مک
+npm run build:mac
 
-از مشارکت شما در بهبود این پروژه استقبال می‌کنیم. لطفاً برای مشارکت:
+# ساخت برای لینوکس
+npm run build:linux
 
-1. پروژه را fork کنید
-2. یک شاخه جدید ایجاد کنید (`git checkout -b feature/amazing-feature`)
-3. تغییرات خود را commit کنید (`git commit -m 'Add some amazing feature'`)
-4. به شاخه خود push کنید (`git push origin feature/amazing-feature`)
-5. یک Pull Request ایجاد کنید
+# ساخت برای همه پلتفرم‌ها
+npm run build:all
+```
 
-## 📄 لایسنس
+## مجوز
 
-این پروژه تحت لایسنس MIT منتشر شده است. برای اطلاعات بیشتر فایل `LICENSE` را مطالعه کنید.
+ISC License
+
+## نویسنده
+
+SM0KE
