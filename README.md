@@ -1,6 +1,8 @@
-# PulseNet
+# PulseNet (نبض اینترنت)
 
 نرم‌افزار مانیتورینگ پینگ به صورت لحظه‌ای
+
+این ابزار به شما اجازه میده پینگ لحظه ای شما به سرورهای بزرگ و اصلی به صورت لحظه ای چک کنید و از اتصال اینترنت خود به شبکه جهانی مطلع بشید.
 
 [![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet-/releases)
 [![macOS](https://img.shields.io/badge/macOS-Coming%20Soon-orange)](https://github.com/SM8KE1/PulseNet-/releases)
@@ -11,23 +13,7 @@
 - مانیتورینگ لحظه‌ای پینگ
 - نمایش نمودار پینگ
 - اعلان‌های هشدار
-- رابط کاربری ساده و کاربرپسند
 
-## دانلود
-
-### ویندوز
-- [PulseNet Setup.exe](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.Setup.exe) - نسخه نصب
-- [PulseNet Portable.zip](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.Portable.zip) - نسخه قابل حمل
-- [PulseNet.msi](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.msi) - نسخه MSI
-
-### مک
-- [PulseNet.dmg](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.dmg) - نسخه نصب
-- [PulseNet.zip](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet-mac.zip) - نسخه فشرده
-
-### لینوکس
-- [PulseNet.AppImage](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.AppImage) - نسخه AppImage
-- [PulseNet.deb](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.deb) - نسخه Debian/Ubuntu
-- [PulseNet.rpm](https://github.com/SM8KE1/PulseNet-/releases/latest/download/PulseNet.rpm) - نسخه Red Hat/Fedora
 
 > **نکته**: نسخه‌های مک و لینوکس به زودی منتشر خواهند شد.
 
@@ -42,13 +28,7 @@
 1. فایل `PulseNet Portable.zip` را دانلود کنید
 2. فایل را از حالت فشرده خارج کنید
 3. فایل `PulseNet.exe` را اجرا کنید
-
-## نیازمندی‌ها
-
-- ویندوز 10 یا بالاتر
-- دسترسی به اینترنت
-- دسترسی ادمین (برای برخی قابلیت‌ها)
-
+ 
 ## توسعه
 
 ### نصب وابستگی‌ها
@@ -75,11 +55,3 @@ npm run build:linux
 # ساخت برای همه پلتفرم‌ها
 npm run build:all
 ```
-
-## مجوز
-
-ISC License
-
-## نویسنده
-
-SM0KE
