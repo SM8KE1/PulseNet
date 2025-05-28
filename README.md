@@ -23,9 +23,8 @@
 ## نصب
 
 ### ویندوز
-1. فایل `PulseNet Setup.exe` را دانلود کنید
-2. فایل را اجرا کنید
-3. مراحل نصب را دنبال کنید
+1. فایل `PulseNet Setup.exe` را دانلود و نصب کنید
+2. فایل exe را با دستور Run As Administrator اجرا کنید
 
 ### نسخه قابل حمل (Portable)
 1. فایل `PulseNet Portable.zip` را دانلود کنید
