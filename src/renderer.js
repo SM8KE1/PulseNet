@@ -1,6 +1,11 @@
 const { ipcRenderer } = require('electron');
 const ping = require('ping');
 
+function logPing(host, result) {
+    const msg = `Ping to ${host}: ${result}`;
+    ipcRenderer.send('log-ping', msg);
+}
+
 // Window control buttons
 document.getElementById('minimize-button').addEventListener('click', () => {
     ipcRenderer.send('minimize-window');
@@ -38,17 +43,20 @@ async function pingHost(host, elementId) {
             timeout: 10,
             extra: ['-c', '1']
         });
-
         if (res.alive) {
             updatePingDisplay(elementId, res.time);
+            logPing(host, `Success (${res.time} ms)`);
         } else {
             updatePingDisplay(elementId, null);
+            logPing(host, 'No Response');
         }
     } catch (error) {
         if (error.message.includes('permission')) {
             updatePingDisplay(elementId, null, 'Need Admin Rights');
+            logPing(host, 'Need Admin Rights');
         } else {
             updatePingDisplay(elementId, null, 'No Response');
+            logPing(host, `Error: ${error.message}`);
         }
     }
 }

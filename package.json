@@ -5,7 +5,11 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder -mw"
   },
   "author": "SM0KE",
   "license": "ISC",
@@ -21,17 +25,34 @@
     "appId": "com.pulsenet.app",
     "productName": "PulseNet",
     "win": {
-      "target": "nsis",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "msi",
+          "arch": ["x64"]
+        }
+      ],
       "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": ["AppImage", "deb", "rpm"],
+      "icon": "assets/icon.png"
     },
     "directories": {
       "output": "dist",
       "buildResources": "assets"
     }
-  },
-  "win": {
-    "target": "nsis",
-    "icon": "assets/icon.ico"
   },
   "nsis": {
     "oneClick": true,
