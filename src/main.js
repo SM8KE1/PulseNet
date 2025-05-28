@@ -1,6 +1,31 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const isAdmin = require('is-admin');
+const fs = require('fs');
+
+
+const logFilePath = path.join(__dirname, 'log.txt');
+
+
+try {
+  if (fs.existsSync(logFilePath)) {
+    fs.unlinkSync(logFilePath);
+  }
+} catch (e) {
+  console.error('Error resetting log.txt:', e);
+}
+
+
+function writeLog(message) {
+  const timestamp = new Date().toISOString();
+  const logMessage = `${timestamp}: ${message}\n`;
+  fs.appendFileSync(logFilePath, logMessage);
+}
+
+
+ipcMain.on('log-ping', (event, logMessage) => {
+  writeLog(logMessage);
+});
 
 let mainWindow;
 
