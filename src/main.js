@@ -4,27 +4,36 @@ const isAdmin = require('is-admin');
 const fs = require('fs');
 
 
-const logFilePath = path.join(__dirname, 'log.txt');
-
-
-try {
-  if (fs.existsSync(logFilePath)) {
-    fs.unlinkSync(logFilePath);
-  }
-} catch (e) {
-  console.error('Error resetting log.txt:', e);
-}
-
-
 function writeLog(message) {
+  const exePath = path.dirname(app.getPath('exe'));
+  const logPath = path.join(exePath, 'log.txt');
   const timestamp = new Date().toISOString();
-  const logMessage = `${timestamp}: ${message}\n`;
-  fs.appendFileSync(logFilePath, logMessage);
+  const logMessage = `[${timestamp}] ${message}\n`;
+
+  try {
+    fs.appendFileSync(logPath, logMessage);
+  } catch (error) {
+    console.error('Error writing to log:', error);
+  }
 }
 
+function resetLog() {
+  const exePath = path.dirname(app.getPath('exe'));
+  const logPath = path.join(exePath, 'log.txt');
+  try {
+    fs.writeFileSync(logPath, '');
+    console.log('Log file reset successfully');
+  } catch (error) {
+    console.error('Error resetting log file:', error);
+  }
+}
 
 ipcMain.on('log-ping', (event, logMessage) => {
   writeLog(logMessage);
+});
+
+ipcMain.on('ping-response', (event, response) => {
+  writeLog(`Ping response: ${response}`);
 });
 
 let mainWindow;
@@ -80,6 +89,7 @@ async function checkAdmin() {
 }
 
 app.whenReady().then(async () => {
+  resetLog();
   await checkAdmin();
   createWindow();
 
