@@ -53,13 +53,13 @@ function createWindow() {
     title: 'PulseNet'
   });
 
-  // Remove menu bar
+
   mainWindow.setMenu(null);
 
-  // Load the index.html file
+
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
-  // Handle window control messages
+
   ipcMain.on('minimize-window', () => {
     mainWindow.minimize();
   });
@@ -68,8 +68,7 @@ function createWindow() {
     mainWindow.close();
   });
 
-  // Uncomment the following line to open DevTools by default
-  // mainWindow.webContents.openDevTools();
+
 }
 
 async function checkAdmin() {

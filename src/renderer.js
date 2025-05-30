@@ -6,7 +6,7 @@ function logPing(host, result) {
     ipcRenderer.send('log-ping', msg);
 }
 
-// Window control buttons
+
 document.getElementById('minimize-button').addEventListener('click', () => {
     ipcRenderer.send('minimize-window');
 });
@@ -15,7 +15,7 @@ document.getElementById('close-button').addEventListener('click', () => {
     ipcRenderer.send('close-window');
 });
 
-// Ping hosts
+
 const hosts = {
     'google-ping': '8.8.8.8',
     'cloudflare-ping': '1.1.1.1',
@@ -61,14 +61,14 @@ async function pingHost(host, elementId) {
     }
 }
 
-// Update pings every second
+
 setInterval(() => {
     Object.entries(hosts).forEach(([elementId, host]) => {
         pingHost(host, elementId);
     });
 }, 1000);
 
-// Initial ping
+
 Object.entries(hosts).forEach(([elementId, host]) => {
     pingHost(host, elementId);
 });
