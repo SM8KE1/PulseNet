@@ -36,12 +36,12 @@
 
 ### نصب وابستگی‌ها
 ```bash
-npm install
+npm run build
 ```
 
 ### اجرا در حالت توسعه
 ```bash
-npm start
+npm run dev
 ```
 
 ### ساخت نسخه نهایی
