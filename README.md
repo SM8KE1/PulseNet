@@ -17,7 +17,8 @@
 
 > **نکته**: نسخه‌های مک و لینوکس به زودی منتشر خواهند شد.
 
-![image](https://github.com/user-attachments/assets/4be855b4-0499-4152-9dfe-66dfb9428d38)
+![image](https://github.com/user-attachments/assets/59ccf1d2-a8dc-48cc-a849-e211c01d05f0)
+
 
 
 ## نصب
