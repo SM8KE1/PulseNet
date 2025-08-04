@@ -6,14 +6,11 @@ const ping = require('ping');
 
 function getLogPath() {
   try {
-    let logPath;
-    // Check if the app is packaged
+    let logPath
     if (app.isPackaged) {
-      // For packaged app (portable or installed), log next to the executable
       const exePath = path.dirname(app.getPath('exe'));
       logPath = path.join(exePath, 'log.txt');
     } else {
-      // For development, log in the project root
       logPath = path.join(app.getAppPath(), 'log.txt');
     }
 
@@ -112,7 +109,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false, // Added back for local file access in production
+      webSecurity: false,
     },
     frame: false,
     titleBarStyle: 'hidden',
@@ -124,7 +121,6 @@ function createWindow() {
 
   mainWindow.setMenu(null);
 
-  // Vite DEV server URL
   const devServerURL = process.env.VITE_DEV_SERVER_URL;
 
   if (devServerURL) {
@@ -132,8 +128,6 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
-
-
   ipcMain.on('minimize-window', () => {
     mainWindow.minimize();
   });
@@ -162,7 +156,6 @@ async function checkAdmin() {
 }
 
 app.whenReady().then(async () => {
-  // Apply CSP only in production
   if (!process.env.VITE_DEV_SERVER_URL) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({
