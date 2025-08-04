@@ -46,7 +46,7 @@ npm run dev
 
 ### ساخت نسخه نهایی
 ```bash
-# ساخت برای ویندوز
+
 npm run build
 
 ```
