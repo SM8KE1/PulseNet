@@ -28,7 +28,7 @@
 2. فایل exe را با دستور Run As Administrator اجرا کنید
 
 ### نسخه قابل حمل (Portable)
-1. فایل `PulseNet Portable.zip` را دانلود کنید
+1. فایل `PulseNet Portable` را دانلود کنید
 2. فایل را از حالت فشرده خارج کنید
 3. فایل `PulseNet.exe` را اجرا کنید
  
