@@ -1,29 +1,39 @@
 {
   "name": "pulsenet",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "نرم‌افزار مانیتورینگ پینگ به صورت لحظه‌ای",
-  "main": "src/main.js",
+  "main": "dist-electron/main.js",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder -mw"
+    "dev": "vite",
+    "clean": "rd /s /q dist && rd /s /q dist-electron",
+    "build": "npm run clean && vite build && electron-builder"
   },
   "author": "SM0KE",
   "license": "ISC",
   "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
     "electron": "^28.1.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "vite": "^7.0.6",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
   },
   "dependencies": {
+    "is-admin": "^3.0.0",
     "ping": "^0.4.4",
-    "is-admin": "^3.0.0"
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-spring": "^10.0.1"
   },
   "build": {
     "appId": "com.pulsenet.app",
     "productName": "PulseNet",
+    "files": [
+      "dist-electron/main.js",
+      "dist-electron/preload.js",
+      "dist/**/*",
+      "package.json"
+    ],
     "win": {
       "target": [
         {
@@ -34,12 +44,6 @@
         },
         {
           "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "msi",
           "arch": [
             "x64"
           ]

@@ -1,0 +1,1 @@
+"use strict";const{contextBridge:n,ipcRenderer:e}=require("electron");n.exposeInMainWorld("ipcApi",{send:(i,o)=>{["minimize-window","close-window","open-github-link","log-ping","ping-response"].includes(i)&&e.send(i,o)}});n.exposeInMainWorld("pingApi",{ping:i=>e.invoke("ping-host",i)});
