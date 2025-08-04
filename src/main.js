@@ -1,30 +1,73 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, session } = require('electron');
 const path = require('path');
 const isAdmin = require('is-admin');
 const fs = require('fs');
+const ping = require('ping');
 
+function getLogPath() {
+  try {
+    let logPath;
+    // Check if the app is packaged
+    if (app.isPackaged) {
+      // For packaged app (portable or installed), log next to the executable
+      const exePath = path.dirname(app.getPath('exe'));
+      logPath = path.join(exePath, 'log.txt');
+    } else {
+      // For development, log in the project root
+      logPath = path.join(app.getAppPath(), 'log.txt');
+    }
+
+    const logDir = path.dirname(logPath);
+
+    // Ensure the directory exists
+    if (!fs.existsSync(logDir)) {
+      try {
+        fs.mkdirSync(logDir, { recursive: true });
+        console.log('Created directory:', logDir);
+      } catch (mkdirError) {
+        console.error('Error creating directory:', mkdirError);
+        throw mkdirError;
+      }
+    }
+
+    // Ensure the log file exists
+    if (!fs.existsSync(logPath)) {
+      try {
+        fs.writeFileSync(logPath, '');
+        console.log('Created log file:', logPath);
+      } catch (fileError) {
+        console.error('Error creating log file:', fileError);
+        throw fileError;
+      }
+    }
+
+    return logPath;
+  } catch (error) {
+    console.error('Error in getLogPath:', error);
+    throw error;
+  }
+}
 
 function writeLog(message) {
-  const exePath = path.dirname(app.getPath('exe'));
-  const logPath = path.join(exePath, 'log.txt');
-  const timestamp = new Date().toISOString();
-  const logMessage = `[${timestamp}] ${message}\n`;
-
   try {
+    const logPath = getLogPath();
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
     fs.appendFileSync(logPath, logMessage);
   } catch (error) {
     console.error('Error writing to log:', error);
+    dialog.showErrorBox('خطا در نوشتن لاگ', `خطا در نوشتن فایل لاگ: ${error.message}`);
   }
 }
 
 function resetLog() {
-  const exePath = path.dirname(app.getPath('exe'));
-  const logPath = path.join(exePath, 'log.txt');
   try {
+    const logPath = getLogPath();
     fs.writeFileSync(logPath, '');
     console.log('Log file reset successfully');
   } catch (error) {
     console.error('Error resetting log file:', error);
+    dialog.showErrorBox('خطا در بازنویسی لاگ', `خطا در بازنویسی فایل لاگ: ${error.message}`);
   }
 }
 
@@ -32,8 +75,31 @@ ipcMain.on('log-ping', (event, logMessage) => {
   writeLog(logMessage);
 });
 
-ipcMain.on('ping-response', (event, response) => {
-  writeLog(`Ping response: ${response}`);
+ipcMain.handle('ping-host', async (event, host) => {
+  try {
+    const res = await ping.promise.probe(host, {
+      timeout: 10,
+      extra: ['-c', '1'],
+    });
+    const message = res.alive ? `Success (${res.time} ms)` : 'No Response';
+    writeLog(`Ping to ${host}: ${message}`);
+    return {
+      alive: res.alive,
+      time: res.time,
+      error: null,
+    };
+  } catch (error) {
+    writeLog(`Ping to ${host}: Error: ${error.message}`);
+    return {
+      alive: false,
+      time: null,
+      error: error.message,
+    };
+  }
+});
+
+ipcMain.on('open-github-link', () => {
+  shell.openExternal('https://github.com/SM8KE1/PulseNet');
 });
 
 let mainWindow;
@@ -43,8 +109,10 @@ function createWindow() {
     width: 800,
     height: 600,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: false, // Added back for local file access in production
     },
     frame: false,
     titleBarStyle: 'hidden',
@@ -56,8 +124,14 @@ function createWindow() {
 
   mainWindow.setMenu(null);
 
+  // Vite DEV server URL
+  const devServerURL = process.env.VITE_DEV_SERVER_URL;
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  if (devServerURL) {
+    mainWindow.loadURL(devServerURL);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
 
 
   ipcMain.on('minimize-window', () => {
@@ -88,6 +162,18 @@ async function checkAdmin() {
 }
 
 app.whenReady().then(async () => {
+  // Apply CSP only in production
+  if (!process.env.VITE_DEV_SERVER_URL) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': ["script-src 'self'"],
+        },
+      });
+    });
+  }
+
   resetLog();
   await checkAdmin();
   createWindow();
