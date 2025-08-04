@@ -36,7 +36,7 @@
 
 ### نصب وابستگی‌ها
 ```bash
-npm run build
+npm install
 ```
 
 ### اجرا در حالت توسعه
@@ -47,16 +47,8 @@ npm run dev
 ### ساخت نسخه نهایی
 ```bash
 # ساخت برای ویندوز
-npm run build:win
+npm run build
 
-# ساخت برای مک
-npm run build:mac
-
-# ساخت برای لینوکس
-npm run build:linux
-
-# ساخت برای همه پلتفرم‌ها
-npm run build:all
 ```
 
 ## پشتیبانی
