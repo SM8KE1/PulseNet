@@ -7,19 +7,15 @@ const ping = require('ping');
 function getLogPath() {
   try {
     let logPath;
-    // Check if the app is packaged
     if (app.isPackaged) {
-      // For packaged app (portable or installed), log next to the executable
       const exePath = path.dirname(app.getPath('exe'));
       logPath = path.join(exePath, 'log.txt');
     } else {
-      // For development, log in the project root
       logPath = path.join(app.getAppPath(), 'log.txt');
     }
 
     const logDir = path.dirname(logPath);
 
-    // Ensure the directory exists
     if (!fs.existsSync(logDir)) {
       try {
         fs.mkdirSync(logDir, { recursive: true });
@@ -30,7 +26,6 @@ function getLogPath() {
       }
     }
 
-    // Ensure the log file exists
     if (!fs.existsSync(logPath)) {
       try {
         fs.writeFileSync(logPath, '');
@@ -112,7 +107,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false, // Added back for local file access in production
+      webSecurity: false,
     },
     frame: false,
     titleBarStyle: 'hidden',
@@ -124,7 +119,6 @@ function createWindow() {
 
   mainWindow.setMenu(null);
 
-  // Vite DEV server URL
   const devServerURL = process.env.VITE_DEV_SERVER_URL;
 
   if (devServerURL) {
@@ -162,7 +156,6 @@ async function checkAdmin() {
 }
 
 app.whenReady().then(async () => {
-  // Apply CSP only in production
   if (!process.env.VITE_DEV_SERVER_URL) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({

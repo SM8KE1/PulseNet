@@ -1,4 +1,3 @@
-/* Custom Scrollbar Styles */
 ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -32,7 +31,7 @@ body {
     min-height: 100vh;
     -webkit-app-region: drag;
     overflow-x: hidden;
-    user-select: none; /* Disable text selection */
+    user-select: none;
 }
 .titlebar {
     position: fixed;
@@ -103,18 +102,15 @@ body {
 
 .icon-button {
     cursor: pointer;
-    line-height: 0; /* Prevents extra space below img */
+    line-height: 0;
     width: 32px;
     height: 32px;
-    color: #ffffff; /* SVG color for dark theme */
+    color: #ffffff;
     transition: transform 0.2s ease-in-out;
 }
 
-.icon-button:hover {
-    /* transform: scale(1.1); */ /* Removed hover effect */
-}
 
-/* Adjust ThemeToggle SVG size to match */
+
 .top-left-controls .titlebar-button {
     width: 32px;
     height: 32px;
@@ -126,7 +122,7 @@ body {
 }
 
 .light-theme .icon-button {
-    color: #121212; /* SVG color for light theme */
+    color: #121212;
 }
 
 .ping-card {
@@ -171,7 +167,6 @@ h1 {
     color: #f44336 !important;
 }
 
-/* Light Theme */
 .light-theme {
     background-color: #f0f0f0;
     color: #121212;
@@ -206,12 +201,10 @@ h1 {
     color: #ffffff;
 }
 
-/* Remove hover background from theme toggle */
 .top-left-controls .titlebar-button:hover {
     background-color: transparent;
 }
 
-/* Light theme scrollbar */
 .light-theme ::-webkit-scrollbar-track {
     background: #f0f0f0;
 }

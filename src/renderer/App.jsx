@@ -3,7 +3,6 @@ import ThemeToggle from './ThemeToggle';
 import GitHubIcon from './GitHubIcon';
 import iconIco from '../../assets/icon.ico';
 
-// Custom hook for pinging
 const usePing = (host) => {
   const [pingData, setPingData] = useState({ status: '--', hasError: false });
 
@@ -12,7 +11,6 @@ const usePing = (host) => {
       try {
         const result = await window.pingApi.ping(host);
         if (result.error) {
-          // Handle specific errors like admin rights if needed
           if (result.error.includes('permission')) {
             setPingData({ status: 'Need Admin', hasError: true });
           } else {
@@ -29,16 +27,15 @@ const usePing = (host) => {
       }
     };
 
-    ping(); // Initial ping
-    const intervalId = setInterval(ping, 2000); // Ping every 2 seconds
+    ping();
+    const intervalId = setInterval(ping, 2000);
 
-    return () => clearInterval(intervalId); // Cleanup on unmount
+    return () => clearInterval(intervalId);
   }, [host]);
 
   return pingData;
 };
 
-// PingCard Component
 const PingCard = ({ label, host }) => {
   const { status, hasError } = usePing(host);
   return (
@@ -52,7 +49,6 @@ const PingCard = ({ label, host }) => {
   );
 };
 
-// Main App Component
 const App = () => {
   const [isDarkMode, setDarkMode] = useState(true);
 
@@ -68,7 +64,6 @@ const App = () => {
     }
   }, [isDarkMode]);
 
-  // Handle window controls
   useEffect(() => {
     const minimizeBtn = document.getElementById('minimize-button');
     const closeBtn = document.getElementById('close-button');
