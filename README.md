@@ -17,7 +17,8 @@
 
 > **نکته**: نسخه‌های مک و لینوکس به زودی منتشر خواهند شد.
 
-![image](https://github.com/user-attachments/assets/4be855b4-0499-4152-9dfe-66dfb9428d38)
+![image](https://github.com/user-attachments/assets/59ccf1d2-a8dc-48cc-a849-e211c01d05f0)
+
 
 
 ## نصب
@@ -27,7 +28,7 @@
 2. فایل exe را با دستور Run As Administrator اجرا کنید
 
 ### نسخه قابل حمل (Portable)
-1. فایل `PulseNet Portable.zip` را دانلود کنید
+1. فایل `PulseNet Portable` را دانلود کنید
 2. فایل را از حالت فشرده خارج کنید
 3. فایل `PulseNet.exe` را اجرا کنید
  
@@ -40,22 +41,14 @@ npm install
 
 ### اجرا در حالت توسعه
 ```bash
-npm start
+npm run dev
 ```
 
 ### ساخت نسخه نهایی
 ```bash
-# ساخت برای ویندوز
-npm run build:win
 
-# ساخت برای مک
-npm run build:mac
+npm run build
 
-# ساخت برای لینوکس
-npm run build:linux
-
-# ساخت برای همه پلتفرم‌ها
-npm run build:all
 ```
 
 ## پشتیبانی
