@@ -5,8 +5,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "clean": "rd /s /q dist && rd /s /q dist-electron",
-    "build": "npm run clean && vite build && electron-builder"
+    "build": "vite build && electron-builder"
   },
   "author": "SM0KE",
   "license": "ISC",
