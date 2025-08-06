@@ -1,0 +1,63 @@
+[2025-08-06T22:19:01.263Z] Ping to 8.8.8.8: Success (31 ms)
+[2025-08-06T22:19:01.267Z] Ping to time.ir: Success (4 ms)
+[2025-08-06T22:19:01.271Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:01.280Z] Ping to 8.8.8.8: Success (30 ms)
+[2025-08-06T22:19:01.316Z] Ping to 1.1.1.1: Success (87 ms)
+[2025-08-06T22:19:01.348Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:03.305Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:03.315Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:03.377Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:05.291Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:05.306Z] Ping to 8.8.8.8: Success (30 ms)
+[2025-08-06T22:19:05.373Z] Ping to 1.1.1.1: Success (85 ms)
+[2025-08-06T22:19:07.353Z] Ping to 8.8.8.8: Success (30 ms)
+[2025-08-06T22:19:07.371Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:07.421Z] Ping to 1.1.1.1: Success (86 ms)
+[2025-08-06T22:19:09.986Z] Ping to 1.1.1.1: Success (85 ms)
+[2025-08-06T22:19:09.988Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:09.991Z] Ping to time.ir: Success (6 ms)
+[2025-08-06T22:19:10.928Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:10.935Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:11.283Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:11.293Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:11.360Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:12.927Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:13.283Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:13.298Z] Ping to 8.8.8.8: Success (31 ms)
+[2025-08-06T22:19:13.355Z] Ping to 1.1.1.1: Success (85 ms)
+[2025-08-06T22:19:14.926Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:15.294Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:15.301Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:15.369Z] Ping to 1.1.1.1: Success (85 ms)
+[2025-08-06T22:19:16.927Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:17.215Z] Ping to time.ir: Success (2 ms)
+[2025-08-06T22:19:17.228Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:17.288Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:19.233Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:19.243Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:19.309Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:19.925Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:20.926Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:21.285Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:21.295Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:21.364Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:22.925Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:23.238Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:23.250Z] Ping to 8.8.8.8: Success (30 ms)
+[2025-08-06T22:19:23.309Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:24.929Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:25.251Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:25.266Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:25.315Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:26.923Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:27.235Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:27.247Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:27.308Z] Ping to 1.1.1.1: Success (85 ms)
+[2025-08-06T22:19:28.920Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:29.240Z] Ping to time.ir: Success (4 ms)
+[2025-08-06T22:19:29.250Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:29.311Z] Ping to 1.1.1.1: Success (84 ms)
+[2025-08-06T22:19:30.926Z] Ping to 104.155.178.105: No Response
+[2025-08-06T22:19:31.239Z] Ping to time.ir: Success (3 ms)
+[2025-08-06T22:19:31.253Z] Ping to 8.8.8.8: Success (29 ms)
+[2025-08-06T22:19:31.312Z] Ping to 1.1.1.1: Success (84 ms)
