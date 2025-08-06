@@ -55,7 +55,7 @@
         "dmg",
         "zip"
       ],
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.ico"
     },
     "linux": {
       "target": [
@@ -63,7 +63,7 @@
         "deb",
         "rpm"
       ],
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.ico"
     },
     "directories": {
       "output": "dist",
