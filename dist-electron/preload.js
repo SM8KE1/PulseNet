@@ -1,1 +1,13 @@
-"use strict";const{contextBridge:n,ipcRenderer:e}=require("electron");n.exposeInMainWorld("ipcApi",{send:(i,o)=>{["minimize-window","close-window","open-github-link","log-ping","ping-response"].includes(i)&&e.send(i,o)}});n.exposeInMainWorld("pingApi",{ping:i=>e.invoke("ping-host",i)});
+"use strict";
+const { contextBridge, ipcRenderer } = require("electron");
+contextBridge.exposeInMainWorld("ipcApi", {
+  send: (channel, data) => {
+    const validChannels = ["minimize-window", "close-window", "open-github-link", "log-ping", "ping-response"];
+    if (validChannels.includes(channel)) {
+      ipcRenderer.send(channel, data);
+    }
+  }
+});
+contextBridge.exposeInMainWorld("pingApi", {
+  ping: (host) => ipcRenderer.invoke("ping-host", host)
+});
