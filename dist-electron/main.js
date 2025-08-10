@@ -107,16 +107,8 @@ function createWindow() {
   });
   mainWindow.setMenu(null);
   const devServerURL = process.env.VITE_DEV_SERVER_URL;
-  const loadVite = (url) => {
-    mainWindow.loadURL(url).catch((e) => {
-      console.log("Error on load URL, retrying...", e.message);
-      setTimeout(() => {
-        loadVite(url);
-      }, 200);
-    });
-  };
   if (devServerURL) {
-    loadVite(devServerURL);
+    mainWindow.loadURL(devServerURL);
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
