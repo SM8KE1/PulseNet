@@ -29,8 +29,8 @@ body {
     background-color: #1a1a1a;
     color: #ffffff;
     min-height: 100vh;
-    -webkit-app-region: drag;
     overflow-x: hidden;
+    overflow-y: auto;
     user-select: none;
 }
 .titlebar {
@@ -134,14 +134,39 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    transition: transform 0.2s ease;
+    transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    position: relative;
 }
 .ping-card:hover {
     transform: translateY(-2px);
 }
+
+.ping-card.dragging {
+    opacity: 0.5;
+    transform: rotate(5deg);
+    z-index: 1000;
+}
+
+.ping-card.drag-over {
+    border: 2px solid #4CAF50;
+    background-color: rgba(76, 175, 80, 0.1);
+}
+
+.ping-card.editing {
+    border: 2px solid #4CAF50;
+    background-color: #1a2a1a;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(76, 175, 80, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+}
 .ping-info {
     flex-grow: 1;
 }
+
 .ping-value {
     font-size: 24px;
     font-weight: bold;
@@ -156,6 +181,7 @@ body {
     font-size: 16px;
     margin-top: 5px;
 }
+
 h1 {
     color: #ffffff;
     text-align: center;
@@ -215,4 +241,317 @@ h1 {
 
 .light-theme ::-webkit-scrollbar-thumb:hover {
     background: #a8a8a8;
+}
+
+/* Add Host Form Styles */
+.add-host-container {
+    position: absolute;
+    top: -60px;
+    right: 7px;
+    z-index: 10;
+    -webkit-app-region: no-drag;
+}
+
+.add-host-button {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.add-host-button:hover {
+    background: linear-gradient(135deg, #45a049, #4CAF50);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(76, 175, 80, 0.4);
+}
+
+.edit-host-button {
+    background: linear-gradient(135deg, #FF9800, #F57C00);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 10px;
+}
+
+.edit-host-button:hover {
+    background: linear-gradient(135deg, #F57C00, #FF9800);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(255, 152, 0, 0.4);
+}
+
+.edit-host-button.active {
+    background: linear-gradient(135deg, #E65100, #BF360C);
+    box-shadow: 0 4px 8px rgba(230, 81, 0, 0.4);
+}
+
+.edit-host-button.active:hover {
+    background: linear-gradient(135deg, #BF360C, #E65100);
+}
+
+.add-host-form {
+    background-color: #2d2d2d;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+    border: 2px solid #4CAF50;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid #404040;
+    border-radius: 8px;
+    background-color: #1a1a1a;
+    color: #ffffff;
+    font-size: 16px;
+    transition: border-color 0.3s ease;
+    box-sizing: border-box;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: #4CAF50;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.submit-button {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.submit-button:hover {
+    background: linear-gradient(135deg, #45a049, #4CAF50);
+    transform: translateY(-1px);
+}
+
+.cancel-button {
+    background: #666666;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cancel-button:hover {
+    background: #777777;
+    transform: translateY(-1px);
+}
+
+
+
+/* Light Theme Styles for New Components */
+.light-theme .add-host-button {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+}
+
+.light-theme .add-host-form {
+    background-color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.light-theme .form-input {
+    background-color: #f9f9f9;
+    color: #121212;
+    border-color: #cccccc;
+}
+
+.light-theme .form-input:focus {
+    border-color: #4CAF50;
+}
+
+
+
+
+
+/* Edit Input Styles */
+.edit-input {
+    width: 180px;
+    padding: 8px 12px;
+    border: 2px solid #4CAF50;
+    border-radius: 6px;
+    background-color: #2a2a2a;
+    color: #ffffff;
+    font-size: 14px;
+    margin-bottom: 8px;
+    transition: border-color 0.3s ease;
+}
+
+.edit-input:focus {
+    outline: none;
+    border-color: #66BB6A;
+    background-color: #333333;
+}
+
+.edit-input::placeholder {
+    color: #888888;
+}
+
+/* Save/Cancel Button Styles */
+.save-button {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.save-button:hover {
+    background: linear-gradient(135deg, #45a049, #4CAF50);
+    transform: translateY(-1px);
+}
+
+.cancel-button {
+    background: #666666;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cancel-button:hover {
+    background: #777777;
+    transform: translateY(-1px);
+}
+
+/* Delete Button Styles */
+.delete-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(244, 67, 54, 0.1);
+    color: #f44336;
+    border: 1px solid rgba(244, 67, 54, 0.3);
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    z-index: 5;
+}
+
+.delete-button:hover {
+    background: rgba(244, 67, 54, 0.2);
+    border-color: rgba(244, 67, 54, 0.5);
+    transform: scale(1.1);
+}
+
+/* Light theme delete button */
+.light-theme .delete-button {
+    background: rgba(244, 67, 54, 0.05);
+    color: #d32f2f;
+    border-color: rgba(244, 67, 54, 0.2);
+}
+
+.light-theme .delete-button:hover {
+    background: rgba(244, 67, 54, 0.1);
+    border-color: rgba(244, 67, 54, 0.4);
+}
+
+/* Drag Handle Styles */
+.drag-handle {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: grab;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.drag-handle:hover {
+    background: rgba(76, 175, 80, 0.1);
+    cursor: grabbing;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.drag-line {
+    width: 16px;
+    height: 2px;
+    background: #4CAF50;
+    border-radius: 1px;
+    transition: background 0.2s ease;
+}
+
+.drag-handle:hover .drag-line {
+    background: #66BB6A;
+}
+
+.drag-handle.inactive {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.drag-handle.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Ping Results Section */
+#ping-results {
+    margin-top: 100px;
+    position: relative;
 }
