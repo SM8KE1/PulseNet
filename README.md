@@ -1,59 +1,57 @@
-# PulseNet (نبض اینترنت)
+# PulseNet (Internet Pulse)
 
-نرم‌افزار مانیتورینگ پینگ به صورت لحظه‌ای
+Real-time ping monitoring software
 
-این ابزار به شما اجازه میده پینگ لحظه ای شما به سرورهای بزرگ و اصلی به صورت لحظه ای چک کنید و از اتصال اینترنت خود به شبکه جهانی مطلع بشید.
+This tool allows you to check your real-time ping to major servers and stay informed about your internet connection to the global network.
 
 [![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet-/releases)
 [![macOS](https://img.shields.io/badge/macOS-Coming%20Soon-orange)](https://github.com/SM8KE1/PulseNet-/releases)
 [![Linux](https://img.shields.io/badge/Linux-Coming%20Soon-orange)](https://github.com/SM8KE1/PulseNet-/releases)
 
-## ویژگی‌ها
+## Features
 
-- مانیتورینگ لحظه‌ای پینگ
-- نمایش نمودار پینگ
-- اعلان‌های هشدار
+- Real-time ping monitoring
+- Ping chart display
+- Alert notifications
 
 
-> **نکته**: نسخه‌های مک و لینوکس به زودی منتشر خواهند شد.
+> **Note**: macOS and Linux versions will be released soon.
 
 ![image](https://github.com/user-attachments/assets/59ccf1d2-a8dc-48cc-a849-e211c01d05f0)
 
 
 
-## نصب
+## Installation
 
-### ویندوز
-1. فایل `PulseNet Setup.exe` را دانلود و نصب کنید
-2. فایل exe را با دستور Run As Administrator اجرا کنید
+### Windows
+1. Download and install the `PulseNet Setup.exe` file
+2. Run the exe file with Run As Administrator command
 
-### نسخه قابل حمل (Portable)
-1. فایل `PulseNet Portable` را دانلود کنید
-2. فایل را از حالت فشرده خارج کنید
-3. فایل `PulseNet.exe` را اجرا کنید
- 
-## توسعه
+### Portable Version
+1. Download the `PulseNet Portable` file
+2. Extract the file from compressed format
+3. Run the `PulseNet.exe` file
 
-### نصب وابستگی‌ها
+## Development
+
+### Install Dependencies
 ```bash
 npm install
 ```
 
-### اجرا در حالت توسعه
+### Run in Development Mode
 ```bash
 npm run dev
 ```
 
-### ساخت نسخه نهایی
+### Build Final Version
 ```bash
-
 npm run build
-
 ```
 
-## پشتیبانی
+## Support
 
-برای پشتیبانی و گزارش مشکلات، لطفاً به بخش Issues مراجعه کنید.
+For support and bug reports, please visit the Issues section.
 
-## ارتباط با من
-برای برقراری ارتباط به پروفایل مراجعه کنید.
+## Contact Me
+Visit my profile to get in touch.
