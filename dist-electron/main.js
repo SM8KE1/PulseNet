@@ -47,7 +47,7 @@ function writeLog(message) {
     fs.appendFileSync(logPath, logMessage);
   } catch (error) {
     console.error("Error writing to log:", error);
-    dialog.showErrorBox("خطا در نوشتن لاگ", `خطا در نوشتن فایل لاگ: ${error.message}`);
+    dialog.showErrorBox("Log Write Error", `Error writing to log file: ${error.message}`);
   }
 }
 function resetLog() {
@@ -57,7 +57,7 @@ function resetLog() {
     console.log("Log file reset successfully");
   } catch (error) {
     console.error("Error resetting log file:", error);
-    dialog.showErrorBox("خطا در بازنویسی لاگ", `خطا در بازنویسی فایل لاگ: ${error.message}`);
+    dialog.showErrorBox("Log Reset Error", `Error resetting log file: ${error.message}`);
   }
 }
 ipcMain.on("log-ping", (event, logMessage) => {
@@ -125,9 +125,9 @@ async function checkAdmin() {
     if (!admin) {
       dialog.showMessageBox({
         type: "warning",
-        title: "نیاز به دسترسی ادمین",
-        message: "این برنامه برای اجرای دستورات پینگ نیاز به دسترسی ادمین دارد. لطفا برنامه را با دسترسی ادمین اجرا کنید.",
-        buttons: ["باشه"]
+        title: "Admin Access Required",
+        message: "This application requires administrator access to run ping commands. Please run the application as administrator.",
+        buttons: ["OK"]
       });
     }
   } catch (error) {

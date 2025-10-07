@@ -195,7 +195,7 @@ const SortableItem = ({
         <div
           className="drag-handle active"
           {...listeners}
-          title="کشیدن برای مرتب‌سازی"
+          title="Drag to reorder"
           style={{ cursor: 'grab' }}
         >
           <div className="drag-line"></div>
@@ -210,7 +210,7 @@ const SortableItem = ({
       <div className="ping-actions">
         <div className={`ping-value ${hasError ? 'error' : ''}`}>{status}</div>
         {showDelete && (
-          <button className="delete-button" onClick={handleDelete} title={`حذف ${label}`}>
+          <button className="delete-button" onClick={handleDelete} title={`Delete ${label}`}>
             ×
           </button>
         )}
@@ -408,7 +408,6 @@ const App = () => {
     localStorage.setItem('allHosts', JSON.stringify(updatedHosts));
   };
 
-  // dnd-kit drag end handler
   const handleDragEnd = (event) => {
     const { active, over } = event;
 
@@ -419,7 +418,6 @@ const App = () => {
 
     if (oldIndex === -1 || newIndex === -1) return;
 
-    // Reorder the array
     const newOrder = arrayMove(allHosts, oldIndex, newIndex);
     setAllHosts(newOrder);
     localStorage.setItem('allHosts', JSON.stringify(newOrder));
