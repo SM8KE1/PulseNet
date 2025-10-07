@@ -17,8 +17,8 @@ This tool allows you to check your real-time ping to major servers and stay info
 
 > **Note**: macOS and Linux versions will be released soon.
 
-![image](<img width="800" height="600" alt="image" src="https://github.com/user-attachments/assets/bb63776d-5525-4c06-8eee-12f2f0f6c688" />
-)
+![image](<img width="800" height="600" alt="image" src="https://github.com/user-attachments/assets/3293f8a6-bf5c-4275-b645-d707b4f2ef84" />
+
 
 
 
