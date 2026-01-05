@@ -29,51 +29,42 @@
     "react-spring": "^10.0.1"
   },
   "build": {
-    "appId": "com.pulsenet.app",
-    "productName": "PulseNet",
-    "files": [
-      "dist-electron/main.js",
-      "dist-electron/preload.js",
-      "dist/**/*",
-      "package.json"
+  "appId": "com.pulsenet.app",
+  "productName": "PulseNet",
+  "files": [
+    "dist-electron/main.js",
+    "dist-electron/preload.js",
+    "dist/**/*",
+    "package.json"
+  ],
+  "win": {
+    "requestedExecutionLevel": "requireAdministrator",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
     ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "assets/icon.ico"
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "assets/icon.ico"
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb",
-        "rpm"
-      ],
-      "icon": "assets/icon.ico"
-    },
-    "directories": {
-      "output": "dist",
-      "buildResources": "assets"
-    }
+    "icon": "assets/icon.ico"
   },
+  "mac": {
+    "target": ["dmg", "zip"],
+    "icon": "assets/icon.ico"
+  },
+  "linux": {
+    "target": ["AppImage", "deb", "rpm"],
+    "icon": "assets/icon.ico"
+  },
+  "directories": {
+    "output": "dist",
+    "buildResources": "assets"
+  }
+}
+,
   "nsis": {
     "oneClick": true,
     "perMachine": true,
