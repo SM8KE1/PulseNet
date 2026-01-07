@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ThemeToggle from './ThemeToggle';
 import GitHubIcon from './GitHubIcon';
 import iconIco from '../../assets/icon.ico';
+import earthA from '../../assets/earth-a.svg';
+import earthB from '../../assets/earth-b.svg';
 import Lenis from 'lenis';
 import {
   DndContext,
@@ -66,7 +68,7 @@ const useHosts = () => {
   return { allHosts, setAllHosts, addHost };
 };
 
-const usePing = (host) => {
+const usePing = (host, statusTexts) => {
   const [pingData, setPingData] = useState({ status: '--', hasError: false });
 
   useEffect(() => {
@@ -75,18 +77,18 @@ const usePing = (host) => {
         const result = await window.pingApi.ping(host);
         if (result.error) {
           if (result.error.includes('permission')) {
-            setPingData({ status: 'Need Admin', hasError: true });
+            setPingData({ status: statusTexts.needAdmin, hasError: true });
           } else {
-            setPingData({ status: 'Error', hasError: true });
+            setPingData({ status: statusTexts.error, hasError: true });
           }
         } else if (!result.alive) {
-          setPingData({ status: 'No Response', hasError: true });
+          setPingData({ status: statusTexts.noResponse, hasError: true });
         } else {
           setPingData({ status: `${Math.round(result.time)}ms`, hasError: false });
         }
       } catch (e) {
         console.error('Ping IPC failed:', e);
-        setPingData({ status: 'IPC Error', hasError: true });
+        setPingData({ status: statusTexts.ipcError, hasError: true });
       }
     };
 
@@ -94,7 +96,7 @@ const usePing = (host) => {
     const intervalId = setInterval(ping, 2000);
 
     return () => clearInterval(intervalId);
-  }, [host]);
+  }, [host, statusTexts]);
 
   return pingData;
 };
@@ -108,7 +110,9 @@ const SortableItem = ({
   onCancel,
   onDelete,
   showDelete = false,
-  isEditMode = false
+  isEditMode = false,
+  texts,
+  statusTexts
 }) => {
   const {
     attributes,
@@ -119,7 +123,7 @@ const SortableItem = ({
     isDragging,
   } = useSortable({ id });
 
-  const { status, hasError } = usePing(host);
+  const { status, hasError } = usePing(host, statusTexts);
   const [editLabel, setEditLabel] = useState(label || '');
   const [editHost, setEditHost] = useState(host || '');
 
@@ -156,7 +160,7 @@ const SortableItem = ({
         <div className="ping-info">
           <input
             type="text"
-            placeholder="Host name"
+            placeholder={texts.hostNameShortPlaceholder}
             value={editLabel}
             onChange={(e) => setEditLabel(e.target.value)}
             onKeyDown={handleKeyPress}
@@ -165,7 +169,7 @@ const SortableItem = ({
           />
           <input
             type="text"
-            placeholder="IP address or domain"
+            placeholder={texts.hostIpShortPlaceholder}
             value={editHost}
             onChange={(e) => setEditHost(e.target.value)}
             onKeyDown={handleKeyPress}
@@ -174,10 +178,10 @@ const SortableItem = ({
         </div>
         <div className="ping-actions">
           <button className="save-button" onClick={handleSave}>
-            Save
+            {texts.save}
           </button>
           <button className="cancel-button" onClick={handleCancel}>
-            Cancel
+            {texts.cancel}
           </button>
         </div>
       </div>
@@ -188,14 +192,14 @@ const SortableItem = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`ping-card ${isDragging ? 'dragging' : ''}`}
+      className={`ping-card ${isDragging ? 'dragging' : ''} ${isEditMode ? 'edit-mode' : ''}`}
       {...attributes}
     >
       {isEditMode && (
         <div
           className="drag-handle active"
           {...listeners}
-          title="Drag to reorder"
+          title={texts.dragToReorder}
           style={{ cursor: 'grab' }}
         >
           <div className="drag-line"></div>
@@ -210,7 +214,7 @@ const SortableItem = ({
       <div className="ping-actions">
         <div className={`ping-value ${hasError ? 'error' : ''}`}>{status}</div>
         {showDelete && (
-          <button className="delete-button" onClick={handleDelete} title={`Delete ${label}`}>
+          <button className="delete-button" onClick={handleDelete} title={texts.deleteTitle(label)}>
             ×
           </button>
         )}
@@ -234,7 +238,14 @@ const EditIcon = () => (
   </svg>
 );
 
-const AddHostForm = ({ onAddHost }) => {
+const TranslateToggle = ({ isActive, onToggle }) => (
+  <div className="translate-toggle" onClick={onToggle} role="button" aria-label="Toggle language">
+    <img src={earthA} alt="" className={`translate-icon ${isActive ? '' : 'active'}`} />
+    <img src={earthB} alt="" className={`translate-icon ${isActive ? 'active' : ''}`} />
+  </div>
+);
+
+const AddHostForm = ({ onAddHost, texts }) => {
   const [name, setName] = useState('');
   const [ip, setIp] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
@@ -247,11 +258,11 @@ const AddHostForm = ({ onAddHost }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!name.trim() || !ip.trim()) {
-      alert('Please enter both name and IP address');
+      alert(texts.alertMissing);
       return;
     }
     if (!validateIP(ip.trim())) {
-      alert('Invalid IP address or domain format');
+      alert(texts.alertInvalid);
       return;
     }
     onAddHost({ label: name.trim(), host: ip.trim() });
@@ -265,14 +276,14 @@ const AddHostForm = ({ onAddHost }) => {
       {!isExpanded ? (
         <button className="add-host-button" onClick={() => setIsExpanded(true)}>
           <PencilIcon />
-          Add
+          {texts.add}
         </button>
       ) : (
         <form className="add-host-form" onSubmit={handleSubmit}>
           <div className="form-group">
             <input
               type="text"
-              placeholder="Host name (e.g., My Server)"
+              placeholder={texts.hostNamePlaceholder}
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="form-input"
@@ -281,15 +292,15 @@ const AddHostForm = ({ onAddHost }) => {
           <div className="form-group">
             <input
               type="text"
-              placeholder="IP address or domain (e.g., 192.168.1.1)"
+              placeholder={texts.hostIpPlaceholder}
               value={ip}
               onChange={(e) => setIp(e.target.value)}
               className="form-input"
             />
           </div>
           <div className="form-actions">
-            <button type="submit" className="submit-button">Add</button>
-            <button type="button" className="cancel-button" onClick={() => setIsExpanded(false)}>Cancel</button>
+            <button type="submit" className="submit-button">{texts.add}</button>
+            <button type="button" className="cancel-button" onClick={() => setIsExpanded(false)}>{texts.cancel}</button>
           </div>
         </form>
       )}
@@ -301,6 +312,15 @@ const App = () => {
   const [isDarkMode, setDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
     return savedTheme ? savedTheme === 'dark' : true; // Default to dark if no preference saved
+  });
+  const [isSidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [appVersion, setAppVersion] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [isPersian, setIsPersian] = useState(() => {
+    const savedLocale = localStorage.getItem('locale');
+    return savedLocale ? savedLocale === 'fa' : false;
   });
   const { allHosts, setAllHosts, addHost } = useHosts();
   const [editingHost, setEditingHost] = useState(null);
@@ -318,6 +338,18 @@ const App = () => {
     setDarkMode(prevMode => !prevMode);
   };
 
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(prev => !prev);
+  };
+
+  const toggleLocale = () => {
+    setIsPersian(prev => {
+      const next = !prev;
+      localStorage.setItem('locale', next ? 'fa' : 'en');
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (isDarkMode) {
       document.body.classList.remove('light-theme');
@@ -327,6 +359,64 @@ const App = () => {
       localStorage.setItem('theme', 'light');
     }
   }, [isDarkMode]);
+
+  useEffect(() => {
+    const loadVersion = async () => {
+      try {
+        const version = await window.ipcApi.getAppVersion();
+        setAppVersion(version);
+      } catch (error) {
+        console.error('Failed to load app version:', error);
+      }
+    };
+    loadVersion();
+  }, []);
+
+  useEffect(() => {
+    const savedName = localStorage.getItem('displayName');
+    if (savedName) {
+      setDisplayName(savedName);
+      setNameInput(savedName);
+      return;
+    }
+    const loadUsername = async () => {
+      try {
+        const username = await window.ipcApi.getUsername();
+        setDisplayName(username);
+        setNameInput(username);
+      } catch (error) {
+        console.error('Failed to load username:', error);
+      }
+    };
+    loadUsername();
+  }, []);
+
+  const handleEditName = () => {
+    setIsEditingName(true);
+  };
+
+  const handleSaveName = () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+    setDisplayName(trimmed);
+    localStorage.setItem('displayName', trimmed);
+    setIsEditingName(false);
+  };
+
+  const handleCancelName = () => {
+    setNameInput(displayName);
+    setIsEditingName(false);
+  };
+
+  const getInitials = (name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return 'U';
+    const parts = trimmed.split(/\s+/);
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+    return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
+  };
 
   useEffect(() => {
     const minimizeBtn = document.getElementById('minimize-button');
@@ -423,10 +513,145 @@ const App = () => {
     localStorage.setItem('allHosts', JSON.stringify(newOrder));
   };
 
+  const texts = useMemo(() => {
+    const en = {
+      menuTitle: 'Menu',
+      fakeButton: 'Fake Button',
+      openMenuTitle: 'Open menu',
+      closeMenuTitle: 'Close menu',
+      add: 'Add',
+      edit: 'Edit',
+      save: 'Save',
+      cancel: 'Cancel',
+      hostNamePlaceholder: 'Host name (e.g., My Server)',
+      hostIpPlaceholder: 'IP address or domain (e.g., 192.168.1.1)',
+      hostNameShortPlaceholder: 'Host name',
+      hostIpShortPlaceholder: 'IP address or domain',
+      alertMissing: 'Please enter both name and IP address',
+      alertInvalid: 'Invalid IP address or domain format',
+      dragToReorder: 'Drag to reorder',
+      deleteTitle: (label) => `Delete ${label}`,
+    };
+    const fa = {
+      menuTitle: 'منو',
+      fakeButton: 'دکمه فیک',
+      openMenuTitle: 'باز کردن منو',
+      closeMenuTitle: 'بستن منو',
+      add: 'افزودن',
+      edit: 'ویرایش',
+      save: 'ذخیره',
+      cancel: 'لغو',
+      hostNamePlaceholder: 'نام میزبان (مثلاً سرور من)',
+      hostIpPlaceholder: 'آدرس IP یا دامنه (مثلاً 192.168.1.1)',
+      hostNameShortPlaceholder: 'نام میزبان',
+      hostIpShortPlaceholder: 'آدرس IP یا دامنه',
+      alertMissing: 'لطفاً نام و آدرس IP را وارد کنید',
+      alertInvalid: 'فرمت IP یا دامنه نامعتبر است',
+      dragToReorder: 'جابجایی برای تغییر ترتیب',
+      deleteTitle: (label) => `حذف ${label}`,
+    };
+    return isPersian ? fa : en;
+  }, [isPersian]);
+
+  const statusTexts = useMemo(() => {
+    const en = {
+      needAdmin: 'Need Admin',
+      error: 'Error',
+      noResponse: 'No Response',
+      ipcError: 'IPC Error',
+    };
+    const fa = {
+      needAdmin: 'نیاز به دسترسی ادمین',
+      error: 'خطا',
+      noResponse: 'بدون پاسخ',
+      ipcError: 'خطای IPC',
+    };
+    return isPersian ? fa : en;
+  }, [isPersian]);
+
 
 
   return (
     <>
+      <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+        <div className="sidebar-header">
+          <div className="sidebar-team">
+            <div className="sidebar-team-logo">
+              <img src={iconIco} alt="PulseNet" className="sidebar-team-icon" />
+            </div>
+            <div className="sidebar-team-info">
+              <div className="sidebar-team-name">PulseNet</div>
+              <div className="sidebar-team-plan">Monitoring</div>
+            </div>
+          </div>
+          <button className="sidebar-collapse" onClick={toggleSidebarCollapse} aria-label="Toggle sidebar">
+            <span className="collapse-line"></span>
+            <span className="collapse-line"></span>
+          </button>
+        </div>
+        <div className="sidebar-content">
+          <div className="sidebar-group">
+            <div className="sidebar-group-label">Platform</div>
+            <div className="sidebar-menu">
+              <button className="sidebar-item active">
+                <span className="sidebar-item-icon" aria-hidden="true">O</span>
+                <span className="sidebar-item-text">Overview</span>
+              </button>
+              <button className="sidebar-item">
+                <span className="sidebar-item-icon" aria-hidden="true">H</span>
+                <span className="sidebar-item-text">Hosts</span>
+              </button>
+              <button className="sidebar-item">
+                <span className="sidebar-item-icon" aria-hidden="true">A</span>
+                <span className="sidebar-item-text">Alerts</span>
+              </button>
+              <button className="sidebar-item">
+                <span className="sidebar-item-icon" aria-hidden="true">S</span>
+                <span className="sidebar-item-text">Settings</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="sidebar-footer">
+          <div className="sidebar-user">
+            <div className="sidebar-user-avatar">{getInitials(displayName || 'User')}</div>
+            <div className="sidebar-user-info">
+              {isEditingName ? (
+                <div className="sidebar-user-edit">
+                  <input
+                    className="sidebar-name-input"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveName();
+                      if (e.key === 'Escape') handleCancelName();
+                    }}
+                    autoFocus
+                  />
+                  <div className="sidebar-name-actions">
+                    <button className="sidebar-name-button" onClick={handleSaveName}>
+                      OK
+                    </button>
+                    <button className="sidebar-name-button ghost" onClick={handleCancelName}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="sidebar-user-name-row">
+                  <div className="sidebar-user-name">{displayName || 'User'}</div>
+                  <button className="sidebar-name-edit" onClick={handleEditName} aria-label="Edit name">
+                    <PencilIcon />
+                  </button>
+                </div>
+              )}
+              {appVersion && (
+                <div className="sidebar-user-version">v{appVersion}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </aside>
       <div className="titlebar">
         <div className="titlebar-left">
           <img src={iconIco} alt="PulseNet" className="app-icon" />
@@ -437,12 +662,15 @@ const App = () => {
           <div className="titlebar-button close" id="close-button">&#x2715;</div>
         </div>
       </div>
-      <div className="container">
+      <div className={`container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
         <div className="top-left-controls">
           <div id="github-button" className="icon-button">
             <GitHubIcon />
           </div>
           <ThemeToggle isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+          <div className="icon-button">
+            <TranslateToggle isActive={isPersian} onToggle={toggleLocale} />
+          </div>
         </div>
         <h1>PulseNet</h1>
 
@@ -450,14 +678,14 @@ const App = () => {
           <div className="add-host-container">
             <button className="add-host-button" onClick={handleAddNewHost}>
               <PencilIcon />
-              Add
+              {texts.add}
             </button>
             <button
               className={`edit-host-button ${isEditMode ? 'active' : ''}`}
               onClick={() => setIsEditMode(!isEditMode)}
             >
               <EditIcon />
-              Edit
+              {texts.edit}
             </button>
           </div>
 
@@ -472,6 +700,8 @@ const App = () => {
               editing={true}
               onSave={handleSaveHost}
               onCancel={handleCancelEdit}
+              texts={texts}
+              statusTexts={statusTexts}
             />
           )}
 
@@ -494,6 +724,8 @@ const App = () => {
                   showDelete={isEditMode}
                   isEditMode={isEditMode}
                   onDelete={() => handleDeleteHost(host)}
+                  texts={texts}
+                  statusTexts={statusTexts}
                 />
               ))}
             </SortableContext>

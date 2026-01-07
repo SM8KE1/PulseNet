@@ -3,6 +3,7 @@ const path = require('path');
 const isAdmin = require('is-admin');
 const fs = require('fs');
 const ping = require('ping');
+const os = require('os');
 
 function getLogPath() {
   try {
@@ -97,11 +98,23 @@ ipcMain.on('open-github-link', () => {
   shell.openExternal('https://github.com/SM8KE1/PulseNet');
 });
 
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
+
+ipcMain.handle('get-username', () => {
+  try {
+    return os.userInfo().username || 'User';
+  } catch (error) {
+    return 'User';
+  }
+});
+
 let mainWindow;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
+    width: 1000,
     height: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
