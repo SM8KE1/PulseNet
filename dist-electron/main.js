@@ -1,2 +1,172 @@
-"use strict";const{app:i,BrowserWindow:m,dialog:g,ipcMain:a,shell:h,session:p}=require("electron"),t=require("path"),w=require("is-admin"),s=require("fs"),f=require("ping");function u(){try{let e;if(i.isPackaged){const o=t.dirname(i.getPath("exe"));e=t.join(o,"log.txt")}else e=t.join(i.getAppPath(),"log.txt");const r=t.dirname(e);if(!s.existsSync(r))try{s.mkdirSync(r,{recursive:!0}),console.log("Created directory:",r)}catch(o){throw console.error("Error creating directory:",o),o}if(!s.existsSync(e))try{s.writeFileSync(e,""),console.log("Created log file:",e)}catch(o){throw console.error("Error creating log file:",o),o}return e}catch(e){throw console.error("Error in getLogPath:",e),e}}function l(e){try{const r=u(),c=`[${new Date().toISOString()}] ${e}
-`;s.appendFileSync(r,c)}catch(r){console.error("Error writing to log:",r),g.showErrorBox("Log Write Error",`Error writing to log file: ${r.message}`)}}function y(){try{const e=u();s.writeFileSync(e,""),console.log("Log file reset successfully")}catch(e){console.error("Error resetting log file:",e),g.showErrorBox("Log Reset Error",`Error resetting log file: ${e.message}`)}}a.on("log-ping",(e,r)=>{l(r)});a.handle("ping-host",async(e,r)=>{try{const o=await f.promise.probe(r,{timeout:10,extra:["-c","1"]}),c=o.alive?`Success (${o.time} ms)`:"No Response";return l(`Ping to ${r}: ${c}`),{alive:o.alive,time:o.time,error:null}}catch(o){return l(`Ping to ${r}: Error: ${o.message}`),{alive:!1,time:null,error:o.message}}});a.on("open-github-link",()=>{h.openExternal("https://github.com/SM8KE1/PulseNet")});let n;function d(){n=new m({width:800,height:600,webPreferences:{preload:t.join(__dirname,"preload.js"),nodeIntegration:!1,contextIsolation:!0,webSecurity:!1},frame:!1,titleBarStyle:"hidden",backgroundColor:"#1a1a1a",icon:t.join(__dirname,"../assets/icon.ico"),title:"PulseNet"}),n.setMenu(null);const e=process.env.VITE_DEV_SERVER_URL;e?n.loadURL(e):n.loadFile(t.join(__dirname,"../dist/index.html")),a.on("minimize-window",()=>{n.minimize()}),a.on("close-window",()=>{n.close()})}async function E(){try{await w()||g.showMessageBox({type:"warning",title:"Admin Access Required",message:"This application requires administrator access to run ping commands. Please run the application as administrator.",buttons:["OK"]})}catch(e){console.error("Error checking admin rights:",e)}}i.whenReady().then(async()=>{process.env.VITE_DEV_SERVER_URL||p.defaultSession.webRequest.onHeadersReceived((e,r)=>{r({responseHeaders:{...e.responseHeaders,"Content-Security-Policy":["script-src 'self'"]}})}),y(),await E(),d(),i.on("activate",()=>{m.getAllWindows().length===0&&d()})});i.on("window-all-closed",()=>{process.platform!=="darwin"&&i.quit()});
+"use strict";
+const { app, BrowserWindow, dialog, ipcMain, shell, session } = require("electron");
+const path = require("path");
+const isAdmin = require("is-admin");
+const fs = require("fs");
+const ping = require("ping");
+const os = require("os");
+function getLogPath() {
+  try {
+    let logPath;
+    if (app.isPackaged) {
+      const exePath = path.dirname(app.getPath("exe"));
+      logPath = path.join(exePath, "log.txt");
+    } else {
+      logPath = path.join(app.getAppPath(), "log.txt");
+    }
+    const logDir = path.dirname(logPath);
+    if (!fs.existsSync(logDir)) {
+      try {
+        fs.mkdirSync(logDir, { recursive: true });
+        console.log("Created directory:", logDir);
+      } catch (mkdirError) {
+        console.error("Error creating directory:", mkdirError);
+        throw mkdirError;
+      }
+    }
+    if (!fs.existsSync(logPath)) {
+      try {
+        fs.writeFileSync(logPath, "");
+        console.log("Created log file:", logPath);
+      } catch (fileError) {
+        console.error("Error creating log file:", fileError);
+        throw fileError;
+      }
+    }
+    return logPath;
+  } catch (error) {
+    console.error("Error in getLogPath:", error);
+    throw error;
+  }
+}
+function writeLog(message) {
+  try {
+    const logPath = getLogPath();
+    const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+    const logMessage = `[${timestamp}] ${message}
+`;
+    fs.appendFileSync(logPath, logMessage);
+  } catch (error) {
+    console.error("Error writing to log:", error);
+    dialog.showErrorBox("Log Write Error", `Error writing to log file: ${error.message}`);
+  }
+}
+function resetLog() {
+  try {
+    const logPath = getLogPath();
+    fs.writeFileSync(logPath, "");
+    console.log("Log file reset successfully");
+  } catch (error) {
+    console.error("Error resetting log file:", error);
+    dialog.showErrorBox("Log Reset Error", `Error resetting log file: ${error.message}`);
+  }
+}
+ipcMain.on("log-ping", (event, logMessage) => {
+  writeLog(logMessage);
+});
+ipcMain.handle("ping-host", async (event, host) => {
+  try {
+    const res = await ping.promise.probe(host, {
+      timeout: 10,
+      extra: ["-c", "1"]
+    });
+    const message = res.alive ? `Success (${res.time} ms)` : "No Response";
+    writeLog(`Ping to ${host}: ${message}`);
+    return {
+      alive: res.alive,
+      time: res.time,
+      error: null
+    };
+  } catch (error) {
+    writeLog(`Ping to ${host}: Error: ${error.message}`);
+    return {
+      alive: false,
+      time: null,
+      error: error.message
+    };
+  }
+});
+ipcMain.on("open-github-link", () => {
+  shell.openExternal("https://github.com/SM8KE1/PulseNet");
+});
+ipcMain.handle("get-app-version", () => {
+  return app.getVersion();
+});
+ipcMain.handle("get-username", () => {
+  try {
+    return os.userInfo().username || "User";
+  } catch (error) {
+    return "User";
+  }
+});
+let mainWindow;
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1e3,
+    height: 600,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: false
+    },
+    frame: false,
+    titleBarStyle: "hidden",
+    backgroundColor: "#1a1a1a",
+    icon: path.join(__dirname, "../assets/icon.ico"),
+    title: "PulseNet"
+  });
+  mainWindow.setMenu(null);
+  const devServerURL = process.env.VITE_DEV_SERVER_URL;
+  if (devServerURL) {
+    mainWindow.loadURL(devServerURL);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+  }
+  ipcMain.on("minimize-window", () => {
+    mainWindow.minimize();
+  });
+  ipcMain.on("close-window", () => {
+    mainWindow.close();
+  });
+}
+async function checkAdmin() {
+  try {
+    const admin = await isAdmin();
+    if (!admin) {
+      dialog.showMessageBox({
+        type: "warning",
+        title: "Admin Access Required",
+        message: "This application requires administrator access to run ping commands. Please run the application as administrator.",
+        buttons: ["OK"]
+      });
+    }
+  } catch (error) {
+    console.error("Error checking admin rights:", error);
+  }
+}
+app.whenReady().then(async () => {
+  if (!process.env.VITE_DEV_SERVER_URL) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          "Content-Security-Policy": ["script-src 'self'"]
+        }
+      });
+    });
+  }
+  resetLog();
+  await checkAdmin();
+  createWindow();
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});

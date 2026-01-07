@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('ipcApi', {
       ipcRenderer.send(channel, data);
     }
   },
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  getUsername: () => ipcRenderer.invoke('get-username'),
 });
 
 contextBridge.exposeInMainWorld('pingApi', {
