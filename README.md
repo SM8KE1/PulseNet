@@ -5,8 +5,7 @@ Real-time ping monitoring software
 This tool allows you to check your real-time ping to major servers and stay informed about your internet connection to the global network.
 
 [![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet-/releases)
-[![macOS](https://img.shields.io/badge/macOS-Coming%20Soon-orange)](https://github.com/SM8KE1/PulseNet-/releases)
-[![Linux](https://img.shields.io/badge/Linux-Coming%20Soon-orange)](https://github.com/SM8KE1/PulseNet-/releases)
+
 
 ## Features
 
@@ -15,7 +14,7 @@ This tool allows you to check your real-time ping to major servers and stay info
 - Alert notifications
 
 
-> **Note**: macOS and Linux versions will be released soon.
+> **Note**: .
 
 ![image](<img width="800" height="600" alt="image" src="https://github.com/user-attachments/assets/3293f8a6-bf5c-4275-b645-d707b4f2ef84" />
 
