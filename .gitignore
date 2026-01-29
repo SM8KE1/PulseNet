@@ -7,6 +7,12 @@ yarn-error.log
 # Build output
 dist/
 build/
+dist-electron/
+src-tauri/target/
+src-tauri/target/
+**/target/
+*.exe
+*.msi
 
 # IDE and editor files
 .idea/
@@ -14,6 +20,7 @@ build/
 *.swp
 *.swo
 .DS_Store
+Thumbs.db
 
 # Environment variables
 .env
