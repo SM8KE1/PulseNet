@@ -27,10 +27,7 @@ This tool allows you to check your real-time ping to major servers and stay info
 1. Download and install the `PulseNet Setup.exe` file
 2. Run the exe file with Run As Administrator command
 
-### Portable Version
-1. Download the `PulseNet Portable` file
-2. Extract the file from compressed format
-3. Run the `PulseNet.exe` file
+
 
 ## Development
 
