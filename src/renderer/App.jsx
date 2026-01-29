@@ -1,10 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import Lenis from 'lenis';
+import { invoke } from '@tauri-apps/api/tauri';
+import { listen } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/api/shell';
+import 'flag-icons/css/flag-icons.min.css';
 import ThemeToggle from './ThemeToggle';
 import GitHubIcon from './GitHubIcon';
 import iconIco from '../../assets/icon.ico';
+import iranFlag from '../../assets/iran.svg';
 import earthA from '../../assets/earth-a.svg';
 import earthB from '../../assets/earth-b.svg';
-import Lenis from 'lenis';
+import dnsIcon from '../../assets/dns.svg';
+import pingIcon from '../../assets/ping.svg';
+import playIcon from '../../assets/play.svg';
+import pauseIcon from '../../assets/pause.svg';
+import speedIcon from '../../assets/speed.svg';
+import logIcon from '../../assets/log.svg';
+import settingIcon from '../../assets/setting.svg';
 import {
   DndContext,
   closestCenter,
@@ -12,7 +24,6 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  DragOverlay,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -42,7 +53,7 @@ const useHosts = () => {
           { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
           { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
           { type: 'default', label: 'Time.ir', host: 'time.ir' },
-          { type: 'default', label: 'YouTube', host: '104.155.178.105' },
+          { type: 'default', label: 'YouTube', host: 'youtube.com' },
         ]);
       }
     } else {
@@ -51,7 +62,7 @@ const useHosts = () => {
         { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
         { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
         { type: 'default', label: 'Time.ir', host: 'time.ir' },
-        { type: 'default', label: 'YouTube', host: '104.155.178.105' },
+        { type: 'default', label: 'YouTube', host: 'youtube.com' },
       ];
       setAllHosts(defaultHosts);
       localStorage.setItem('allHosts', JSON.stringify(defaultHosts));
@@ -68,13 +79,13 @@ const useHosts = () => {
   return { allHosts, setAllHosts, addHost };
 };
 
-const usePing = (host, statusTexts) => {
+const usePing = (host, statusTexts, intervalMs) => {
   const [pingData, setPingData] = useState({ status: '--', hasError: false });
 
   useEffect(() => {
     const ping = async () => {
       try {
-        const result = await window.pingApi.ping(host);
+        const result = await invoke('ping_host', { host });
         if (result.error) {
           if (result.error.includes('permission')) {
             setPingData({ status: statusTexts.needAdmin, hasError: true });
@@ -93,10 +104,10 @@ const usePing = (host, statusTexts) => {
     };
 
     ping();
-    const intervalId = setInterval(ping, 2000);
+    const intervalId = setInterval(ping, intervalMs);
 
     return () => clearInterval(intervalId);
-  }, [host, statusTexts]);
+  }, [host, statusTexts, intervalMs]);
 
   return pingData;
 };
@@ -112,7 +123,8 @@ const SortableItem = ({
   showDelete = false,
   isEditMode = false,
   texts,
-  statusTexts
+  statusTexts,
+  pingIntervalMs,
 }) => {
   const {
     attributes,
@@ -123,7 +135,7 @@ const SortableItem = ({
     isDragging,
   } = useSortable({ id });
 
-  const { status, hasError } = usePing(host, statusTexts);
+  const { status, hasError } = usePing(host, statusTexts, pingIntervalMs);
   const [editLabel, setEditLabel] = useState(label || '');
   const [editHost, setEditHost] = useState(host || '');
 
@@ -245,79 +257,44 @@ const TranslateToggle = ({ isActive, onToggle }) => (
   </div>
 );
 
-const AddHostForm = ({ onAddHost, texts }) => {
-  const [name, setName] = useState('');
-  const [ip, setIp] = useState('');
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  const validateIP = (ip) => {
-    const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-    return ipRegex.test(ip);
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!name.trim() || !ip.trim()) {
-      alert(texts.alertMissing);
-      return;
-    }
-    if (!validateIP(ip.trim())) {
-      alert(texts.alertInvalid);
-      return;
-    }
-    onAddHost({ label: name.trim(), host: ip.trim() });
-    setName('');
-    setIp('');
-    setIsExpanded(false);
-  };
-
-  return (
-    <div className="add-host-container">
-      {!isExpanded ? (
-        <button className="add-host-button" onClick={() => setIsExpanded(true)}>
-          <PencilIcon />
-          {texts.add}
-        </button>
-      ) : (
-        <form className="add-host-form" onSubmit={handleSubmit}>
-          <div className="form-group">
-            <input
-              type="text"
-              placeholder={texts.hostNamePlaceholder}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="form-input"
-            />
-          </div>
-          <div className="form-group">
-            <input
-              type="text"
-              placeholder={texts.hostIpPlaceholder}
-              value={ip}
-              onChange={(e) => setIp(e.target.value)}
-              className="form-input"
-            />
-          </div>
-          <div className="form-actions">
-            <button type="submit" className="submit-button">{texts.add}</button>
-            <button type="button" className="cancel-button" onClick={() => setIsExpanded(false)}>{texts.cancel}</button>
-          </div>
-        </form>
-      )}
-    </div>
-  );
-};
-
 const App = () => {
   const [isDarkMode, setDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
     return savedTheme ? savedTheme === 'dark' : true; // Default to dark if no preference saved
   });
-  const [isSidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [isSidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('sidebarCollapsed');
+    return saved ? saved === 'true' : true;
+  });
   const [appVersion, setAppVersion] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
+  const [currentPage, setCurrentPage] = useState('ping');
+  const [pingIntervalMs, setPingIntervalMs] = useState(() => {
+    const saved = localStorage.getItem('pingIntervalMs');
+    return saved ? Number(saved) : 2000;
+  });
+  const [autoLaunch, setAutoLaunch] = useState(true);
+  const [closeAction, setCloseAction] = useState(() => {
+    const saved = localStorage.getItem('closeAction');
+    return saved || 'ask';
+  });
+  const [speedStarted, setSpeedStarted] = useState(false);
+  const [speedMetrics, setSpeedMetrics] = useState(null);
+  const [speedLoading, setSpeedLoading] = useState(false);
+  const speedRequestRef = useRef({ id: 0 });
+  const [dnsDomain, setDnsDomain] = useState('');
+  const [dnsResults, setDnsResults] = useState([]);
+  const [dnsLoading, setDnsLoading] = useState(false);
+  const [dnsError, setDnsError] = useState('');
+  const [updateStatus, setUpdateStatus] = useState('');
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [closeRememberChoice, setCloseRememberChoice] = useState(false);
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
+  const scrollRef = useRef(null);
   const [isPersian, setIsPersian] = useState(() => {
     const savedLocale = localStorage.getItem('locale');
     return savedLocale ? savedLocale === 'fa' : false;
@@ -363,7 +340,7 @@ const App = () => {
   useEffect(() => {
     const loadVersion = async () => {
       try {
-        const version = await window.ipcApi.getAppVersion();
+        const version = await invoke('get_app_version');
         setAppVersion(version);
       } catch (error) {
         console.error('Failed to load app version:', error);
@@ -371,6 +348,47 @@ const App = () => {
     };
     loadVersion();
   }, []);
+
+  useEffect(() => {
+    const loadAutoLaunch = async () => {
+      try {
+        const enabled = await invoke('get_auto_launch');
+        setAutoLaunch(Boolean(enabled));
+      } catch (error) {
+        console.error('Failed to load auto-launch setting:', error);
+      }
+    };
+    loadAutoLaunch();
+  }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('closeAction');
+    if (saved) {
+      setCloseAction(saved);
+      invoke('set_close_action', { action: saved }).catch(() => {});
+      return;
+    }
+    const loadCloseAction = async () => {
+      try {
+        const action = await invoke('get_close_action');
+        if (action) {
+          setCloseAction(action);
+        }
+      } catch (error) {
+        console.error('Failed to load close action:', error);
+      }
+    };
+    loadCloseAction();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('closeAction', closeAction);
+    invoke('set_close_action', { action: closeAction }).catch(() => {});
+  }, [closeAction]);
+
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', String(isSidebarCollapsed));
+  }, [isSidebarCollapsed]);
 
   useEffect(() => {
     const savedName = localStorage.getItem('displayName');
@@ -381,7 +399,7 @@ const App = () => {
     }
     const loadUsername = async () => {
       try {
-        const username = await window.ipcApi.getUsername();
+        const username = await invoke('get_username');
         setDisplayName(username);
         setNameInput(username);
       } catch (error) {
@@ -408,6 +426,155 @@ const App = () => {
     setIsEditingName(false);
   };
 
+  const sanitizeDomain = (input) => {
+    return String(input || '')
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0]
+      .split('?')[0]
+      .split('#')[0];
+  };
+
+  const handleDnsTest = async () => {
+    if (dnsLoading) return;
+    const sanitized = sanitizeDomain(dnsDomain);
+    if (!sanitized) {
+      setDnsError(texts.dnsInvalid);
+      return;
+    }
+    setDnsError('');
+    setDnsLoading(true);
+    setDnsResults([]);
+    try {
+      const response = await invoke('test_dns_servers', { domain: sanitized });
+      if (response.error) {
+        setDnsError(texts.dnsInvalid);
+      } else {
+        setDnsResults(response.results || []);
+      }
+    } catch (error) {
+      console.error('DNS test failed:', error);
+      setDnsError(texts.dnsFailed);
+    } finally {
+      setDnsLoading(false);
+    }
+  };
+
+  const handleStartSpeed = () => {
+    speedRequestRef.current.id += 1;
+    const requestId = speedRequestRef.current.id;
+    setSpeedStarted(false);
+    setSpeedMetrics(null);
+    setSpeedLoading(true);
+    invoke('speedtest_cloudflare')
+      .then((result) => {
+        if (requestId !== speedRequestRef.current.id) return;
+        if (result && !result.error) {
+          setSpeedMetrics(result);
+          setSpeedStarted(true);
+        }
+      })
+      .catch((error) => {
+        console.error('Speed test failed:', error);
+      })
+      .finally(() => {
+        if (requestId === speedRequestRef.current.id) {
+          setSpeedLoading(false);
+        }
+      });
+  };
+
+  const handleStopSpeed = () => {
+    speedRequestRef.current.id += 1;
+    setSpeedLoading(false);
+    setSpeedStarted(false);
+    setSpeedMetrics(null);
+  };
+
+  const handleToggleAutoLaunch = async () => {
+    const next = !autoLaunch;
+    setAutoLaunch(next);
+    localStorage.setItem('autoLaunch', String(next));
+    try {
+      const updated = await invoke('set_auto_launch', { enabled: next });
+      setAutoLaunch(Boolean(updated));
+    } catch (error) {
+      console.error('Failed to update auto-launch:', error);
+    }
+  };
+
+  const requestCloseFlow = useCallback(() => {
+    if (closeAction !== 'ask') {
+      invoke('perform_close_action', { action: closeAction });
+      return;
+    }
+    setCloseRememberChoice(false);
+    setCloseModalOpen(true);
+  }, [closeAction]);
+
+  const handleCloseChoice = (action) => {
+    if (closeRememberChoice) {
+      setCloseAction(action);
+    }
+    setCloseModalOpen(false);
+    invoke('perform_close_action', { action });
+  };
+
+  const handleCheckUpdates = async () => {
+    setUpdateStatus(texts.updateChecking);
+    try {
+      const result = await invoke('check_for_updates');
+      if (result && result.error) {
+        setUpdateStatus(texts.updateFailed);
+        return;
+      }
+      if (result && result.updateAvailable) {
+        setUpdateInfo(result);
+        setUpdateModalOpen(true);
+        setUpdateStatus('');
+        return;
+      }
+      setUpdateStatus(texts.updateUpToDate);
+    } catch (error) {
+      console.error('Failed to check updates:', error);
+      setUpdateStatus(texts.updateFailed);
+    }
+  };
+
+  const handleUpdateDownload = async () => {
+    if (!updateInfo || !updateInfo.url) {
+      setUpdateModalOpen(false);
+      return;
+    }
+    try {
+      await open(updateInfo.url);
+    } catch (error) {
+      console.error('Failed to open update URL:', error);
+    } finally {
+      setUpdateModalOpen(false);
+    }
+  };
+
+  const handleUpdateDismiss = () => {
+    setUpdateModalOpen(false);
+  };
+
+  const handlePingIntervalChange = (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value) || value <= 0) return;
+    setPingIntervalMs(value);
+    localStorage.setItem('pingIntervalMs', String(value));
+  };
+
+  useEffect(() => {
+    if (currentPage !== 'speed') {
+      handleStopSpeed();
+    }
+  }, [currentPage]);
+
+  const usableDns = dnsResults.filter((item) => item.status);
+  const blockedDns = dnsResults.filter((item) => !item.status);
+
   const getInitials = (name) => {
     const trimmed = name.trim();
     if (!trimmed) return 'U';
@@ -418,14 +585,22 @@ const App = () => {
     return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
   };
 
+  const getFlagClass = (countryCode) => {
+    if (!countryCode || countryCode.length !== 2) return '';
+    const lower = countryCode.toLowerCase();
+    if (!/^[a-z]{2}$/.test(lower)) return '';
+    return `fi fi-${lower}`;
+  };
+
+  const isIran = (countryCode) => countryCode && countryCode.toUpperCase() === 'IR';
+
   useEffect(() => {
     const minimizeBtn = document.getElementById('minimize-button');
     const closeBtn = document.getElementById('close-button');
     const githubBtn = document.getElementById('github-button');
-
-    const handleMinimize = () => window.ipcApi.send('minimize-window');
-    const handleClose = () => window.ipcApi.send('close-window');
-    const handleGithub = () => window.ipcApi.send('open-github-link');
+    const handleMinimize = () => requestCloseFlow();
+    const handleClose = () => requestCloseFlow();
+    const handleGithub = () => open('https://github.com/SM8KE1/PulseNet');
 
     minimizeBtn.addEventListener('click', handleMinimize);
     closeBtn.addEventListener('click', handleClose);
@@ -436,33 +611,65 @@ const App = () => {
       closeBtn.removeEventListener('click', handleClose);
       githubBtn.removeEventListener('click', handleGithub);
     };
+  }, [requestCloseFlow]);
+
+  useEffect(() => {
+    const shown = localStorage.getItem('adminNoticeShown');
+    if (!shown) {
+      setAdminModalOpen(true);
+    }
   }, []);
 
-  // Lenis
+  const handleAdminNoticeClose = () => {
+    localStorage.setItem('adminNoticeShown', 'true');
+    setAdminModalOpen(false);
+  };
+
   useEffect(() => {
+    if (!scrollRef.current) return undefined;
+
+    const wrapper = scrollRef.current;
+    const content = wrapper.querySelector('.lenis-content');
+    if (!content) return undefined;
+
     const lenis = new Lenis({
-      duration: 1.2,
-      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      direction: 'vertical',
-      gestureDirection: 'vertical',
-      smooth: true,
-      mouseMultiplier: 1,
+      wrapper,
+      content,
+      duration: 1.1,
+      smoothWheel: true,
       smoothTouch: false,
-      touchMultiplier: 2,
-      infinite: false,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
     });
 
-    function raf(time) {
+    let rafId = 0;
+    const raf = (time) => {
       lenis.raf(time);
-      requestAnimationFrame(raf);
-    }
-
-    requestAnimationFrame(raf);
+      rafId = requestAnimationFrame(raf);
+    };
+    rafId = requestAnimationFrame(raf);
 
     return () => {
+      cancelAnimationFrame(rafId);
       lenis.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    let unlisten;
+    listen('close-requested', (event) => {
+      const payload = event && event.payload ? event.payload : null;
+      if (payload && payload.reason === 'exit') return;
+      requestCloseFlow();
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      if (typeof unlisten === 'function') {
+        unlisten();
+      }
+    };
+  }, [requestCloseFlow]);
+
 
   // Helper function to generate consistent keys
   const getHostKey = (host) => {
@@ -515,43 +722,117 @@ const App = () => {
 
   const texts = useMemo(() => {
     const en = {
-      menuTitle: 'Menu',
-      fakeButton: 'Fake Button',
-      openMenuTitle: 'Open menu',
-      closeMenuTitle: 'Close menu',
+      platform: 'Platform',
+      ping: 'Ping',
+      dnsChecker: 'DNS Checker',
+      speedTest: 'Speed Test',
+      alerts: 'Log (Coming soon)',
+      settings: 'Settings',
+      settingsGeneral: 'General',
+      settingsAutoLaunch: 'Auto launch',
+      settingsAutoLaunchHint: 'Start app when Windows boots',
+      settingsPingInterval: 'Ping interval (ms)',
+      settingsPingIntervalHint: 'How often pings refresh',
+      settingsUpdateTitle: 'Check Update Now',
+      settingsUpdateHint: 'Compare your version with GitHub',
+      settingsUpdateButton: 'Check',
+      updateChecking: 'Checking...',
+      updateUpToDate: 'You are up to date',
+      updateFailed: 'Update check failed',
+      updateModalTitle: 'Update available',
+      updateModalBody: 'A newer version is available. Download now?',
+      updateModalYes: 'Yes',
+      updateModalNo: 'Not now',
+      closeActionTitle: 'Action to closing',
+      closeActionHint: 'Choose what happens when closing the app',
+      closeActionHide: 'Hide',
+      closeActionExit: 'Exit',
+      closeActionAsk: 'Ask every time',
+      monitoring: 'Monitoring',
       add: 'Add',
       edit: 'Edit',
       save: 'Save',
       cancel: 'Cancel',
-      hostNamePlaceholder: 'Host name (e.g., My Server)',
-      hostIpPlaceholder: 'IP address or domain (e.g., 192.168.1.1)',
       hostNameShortPlaceholder: 'Host name',
       hostIpShortPlaceholder: 'IP address or domain',
-      alertMissing: 'Please enter both name and IP address',
-      alertInvalid: 'Invalid IP address or domain format',
-      dragToReorder: 'Drag to reorder',
+      dnsPlaceholder: 'example.com',
+      dnsTest: 'Test DNS',
+      dnsTesting: 'Testing...',
+      dnsInvalid: 'Enter a domain (e.g. example.com)',
+      dnsFailed: 'DNS test failed',
+      usable: 'Usable',
+      blocked: 'Blocked',
+      failed: 'failed',
+      speedDownload: 'Download',
+      speedUpload: 'Upload',
+        speedLatency: 'Latency',
+        speedJitter: 'Jitter',
+        speedStart: 'Start',
+        speedStop: 'Stop',
+        speedProvider: 'Cloudflare',
+        speedNote: 'Note: If you use IP-changing tools, enable the Tunnel option in the tool settings to show updates.',
+        dragToReorder: 'Drag to reorder',
       deleteTitle: (label) => `Delete ${label}`,
     };
     const fa = {
-      menuTitle: 'منو',
-      fakeButton: 'دکمه فیک',
-      openMenuTitle: 'باز کردن منو',
-      closeMenuTitle: 'بستن منو',
-      add: 'افزودن',
-      edit: 'ویرایش',
-      save: 'ذخیره',
-      cancel: 'لغو',
-      hostNamePlaceholder: 'نام میزبان (مثلاً سرور من)',
-      hostIpPlaceholder: 'آدرس IP یا دامنه (مثلاً 192.168.1.1)',
-      hostNameShortPlaceholder: 'نام میزبان',
-      hostIpShortPlaceholder: 'آدرس IP یا دامنه',
-      alertMissing: 'لطفاً نام و آدرس IP را وارد کنید',
-      alertInvalid: 'فرمت IP یا دامنه نامعتبر است',
-      dragToReorder: 'جابجایی برای تغییر ترتیب',
-      deleteTitle: (label) => `حذف ${label}`,
+      platform: '\u067e\u0644\u062a\u0641\u0631\u0645',
+      ping: '\u067e\u06cc\u0646\u06af',
+      dnsChecker: '\u062a\u0633\u062a \u062f\u0627\u0645\u0646\u0647',
+      speedTest: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
+      alerts: '\u0644\u0627\u06af',
+      settings: '\u062a\u0646\u0638\u06cc\u0645\u0627\u062a',
+      settingsGeneral: '\u0639\u0645\u0648\u0645\u06cc',
+      settingsAutoLaunch: '\u0627\u062c\u0631\u0627\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631',
+      settingsAutoLaunchHint: '\u0628\u0627 \u0631\u0648\u0634\u0646 \u0634\u062f\u0646 \u0648\u06cc\u0646\u062f\u0648\u0632 \u0627\u062c\u0631\u0627 \u0634\u0648\u062f',
+      settingsPingInterval: '\u0628\u0627\u0632\u0647 \u067e\u06cc\u0646\u06af (\u0645\u06cc\u0644\u06cc \u062b\u0627\u0646\u06cc\u0647)',
+      settingsPingIntervalHint: '\u0641\u0627\u0635\u0644\u0647 \u0628\u0647 \u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u067e\u06cc\u0646\u06af',
+      settingsUpdateTitle: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a',
+      settingsUpdateHint: '\u0645\u0642\u0627\u06cc\u0633\u0647 \u0648\u0631\u0698\u0646 \u0628\u0627 \u06af\u06cc\u062a \u0647\u0627\u0628',
+      settingsUpdateButton: '\u0628\u0631\u0631\u0633\u06cc',
+      updateChecking: '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc...',
+      updateUpToDate: '\u0648\u0631\u0698\u0646 \u0634\u0645\u0627 \u0628\u0647\u200c\u0631\u0648\u0632 \u0627\u0633\u062a',
+      updateFailed: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      updateModalTitle: '\u0622\u067e\u062f\u06cc\u062a \u062c\u062f\u06cc\u062f',
+      updateModalBody: '\u0648\u0631\u0698\u0646 \u062c\u062f\u06cc\u062f\u06cc \u0648\u062c\u0648\u062f \u062f\u0627\u0631\u062f. \u062f\u0627\u0646\u0644\u0648\u062f \u0645\u06cc\u200c\u06a9\u0646\u06cc\u062f\u061f',
+      updateModalYes: '\u0628\u0644\u0647',
+      updateModalNo: '\u0641\u0639\u0644\u0627 \u0646\u0647',
+      closeActionTitle: '\u0627\u0642\u062f\u0627\u0645 \u0647\u0646\u06af\u0627\u0645 \u0628\u0633\u062a\u0646',
+      closeActionHint: '\u0628\u0627 \u0628\u0633\u062a\u0646 \u0628\u0631\u0646\u0627\u0645\u0647 \u0686\u0647 \u0627\u062a\u0641\u0627\u0642\u06cc \u0628\u06cc\u0641\u062a\u062f',
+      closeActionHide: '\u067e\u0646\u0647\u0627\u0646 \u06a9\u0631\u062f\u0646',
+      closeActionExit: '\u062e\u0631\u0648\u062c',
+      closeActionAsk: '\u0647\u0631 \u0628\u0627\u0631 \u0628\u067e\u0631\u0633',
+      monitoring: 'Monitoring',
+      add: '\u0627\u0641\u0632\u0648\u062f\u0646',
+      edit: '\u0648\u06cc\u0631\u0627\u06cc\u0634',
+      save: '\u0630\u062e\u06cc\u0631\u0647',
+      cancel: '\u0644\u063a\u0648',
+      hostNameShortPlaceholder: '\u0646\u0627\u0645 \u0645\u06cc\u0632\u0628\u0627\u0646',
+      hostIpShortPlaceholder: '\u0622\u062f\u0631\u0633 IP \u06cc\u0627 \u062f\u0627\u0645\u0646\u0647',
+      dnsPlaceholder: 'example.com',
+      dnsTest: '\u062a\u0633\u062a DNS',
+      dnsTesting: '\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a...',
+      dnsInvalid: '\u0644\u0637\u0641\u0627\u064b \u06cc\u06a9 \u062f\u0627\u0645\u0646\u0647 \u0648\u0627\u0631\u062f \u06a9\u0646\u06cc\u062f (\u0645\u062b\u0644\u0627\u064b example.com)',
+      dnsFailed: '\u062a\u0633\u062a DNS \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      usable: '\u0642\u0627\u0628\u0644 \u0627\u0633\u062a\u0641\u0627\u062f\u0647',
+      blocked: '\u0645\u0633\u062f\u0648\u062f \u0634\u062f\u0647',
+      failed: '\u0646\u0627\u0645\u0648\u0641\u0642',
+      speedDownload: '\u0633\u0631\u0639\u062a \u062f\u0627\u0646\u0644\u0648\u062f',
+      speedUpload: '\u0633\u0631\u0639\u062a \u0622\u067e\u0644\u0648\u062f',
+      speedLatency: '\u062a\u0627\u062e\u06cc\u0631',
+      speedJitter: '\u0646\u0648\u0633\u0627\u0646',
+      speedStart: '\u0634\u0631\u0648\u0639',
+      speedStop: '\u062a\u0648\u0642\u0641',
+      speedProvider: 'Cloudflare',
+      speedNote: '\u0646\u06a9\u062a\u0647 : \u0627\u06af\u0631 \u0627\u0632 \u0627\u0628\u0632\u0627\u0631 \u0647\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u0622\u06cc\u067e\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0645\u06cc\u06a9\u0646\u06cc\u062f \u0628\u0631\u0627\u06cc \u0646\u0645\u0627\u06cc\u0634 \u062a\u063a\u06cc\u06cc\u0631\u0627\u062a \u06af\u0632\u06cc\u0646\u0647 \u062a\u0648\u0646\u0644 \u0631\u0648 \u062f\u0631 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0627\u0628\u0632\u0627\u0631 \u0631\u0648\u0634\u0646 \u06a9\u0646\u06cc\u062f',
+      dragToReorder: '\u062c\u0627\u0628\u062c\u0627\u06cc\u06cc \u0628\u0631\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u062a\u0631\u062a\u06cc\u0628',
+      deleteTitle: (label) => `\u062d\u0630\u0641 ${label}`,
     };
     return isPersian ? fa : en;
   }, [isPersian]);
+
+
+
+
 
   const statusTexts = useMemo(() => {
     const en = {
@@ -561,18 +842,22 @@ const App = () => {
       ipcError: 'IPC Error',
     };
     const fa = {
-      needAdmin: 'نیاز به دسترسی ادمین',
-      error: 'خطا',
-      noResponse: 'بدون پاسخ',
-      ipcError: 'خطای IPC',
+      needAdmin: '\u0646\u06cc\u0627\u0632 \u0628\u0647 \u062f\u0633\u062a\u0631\u0633\u06cc \u0627\u062f\u0645\u06cc\u0646',
+      error: '\u062e\u0637\u0627',
+      noResponse: '\u0628\u062f\u0648\u0646 \u067e\u0627\u0633\u062e',
+      ipcError: '\u062e\u0637\u0627\u06cc IPC',
     };
     return isPersian ? fa : en;
   }, [isPersian]);
 
 
 
+
+
+
+
   return (
-    <>
+    <div className="app-shell">
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-team">
@@ -581,7 +866,15 @@ const App = () => {
             </div>
             <div className="sidebar-team-info">
               <div className="sidebar-team-name">PulseNet</div>
-              <div className="sidebar-team-plan">Monitoring</div>
+            <div className="sidebar-team-plan">
+              {currentPage === 'ping'
+                ? texts.monitoring
+                : currentPage === 'dns'
+                  ? 'Checking DNS'
+                  : currentPage === 'speed'
+                    ? 'Speed Test'
+                    : 'Settings'}
+            </div>
             </div>
           </div>
           <button className="sidebar-collapse" onClick={toggleSidebarCollapse} aria-label="Toggle sidebar">
@@ -591,23 +884,49 @@ const App = () => {
         </div>
         <div className="sidebar-content">
           <div className="sidebar-group">
-            <div className="sidebar-group-label">Platform</div>
+            <div className="sidebar-group-label">{texts.platform}</div>
             <div className="sidebar-menu">
-              <button className="sidebar-item active">
-                <span className="sidebar-item-icon" aria-hidden="true">O</span>
-                <span className="sidebar-item-text">Overview</span>
+              <button
+                className={`sidebar-item ${currentPage === 'ping' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('ping')}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={pingIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.ping}</span>
+              </button>
+              <button
+                className={`sidebar-item ${currentPage === 'dns' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('dns')}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={dnsIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.dnsChecker}</span>
+              </button>
+              <button
+                className={`sidebar-item ${currentPage === 'speed' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('speed')}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={speedIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.speedTest}</span>
               </button>
               <button className="sidebar-item">
-                <span className="sidebar-item-icon" aria-hidden="true">H</span>
-                <span className="sidebar-item-text">Hosts</span>
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={logIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.alerts}</span>
               </button>
-              <button className="sidebar-item">
-                <span className="sidebar-item-icon" aria-hidden="true">A</span>
-                <span className="sidebar-item-text">Alerts</span>
-              </button>
-              <button className="sidebar-item">
-                <span className="sidebar-item-icon" aria-hidden="true">S</span>
-                <span className="sidebar-item-text">Settings</span>
+              <button
+                className={`sidebar-item ${currentPage === 'settings' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('settings')}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={settingIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.settings}</span>
               </button>
             </div>
           </div>
@@ -652,8 +971,8 @@ const App = () => {
           </div>
         </div>
       </aside>
-      <div className="titlebar">
-        <div className="titlebar-left">
+      <div className="titlebar" data-tauri-drag-region>
+        <div className="titlebar-left" data-tauri-drag-region>
           <img src={iconIco} alt="PulseNet" className="app-icon" />
           <div className="titlebar-title">PulseNet</div>
         </div>
@@ -662,60 +981,75 @@ const App = () => {
           <div className="titlebar-button close" id="close-button">&#x2715;</div>
         </div>
       </div>
-      <div className={`container ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <div className="top-left-controls">
-          <div id="github-button" className="icon-button">
-            <GitHubIcon />
+      <div
+        className={`container scrollbar ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}
+        id="style-2"
+        ref={scrollRef}
+      >
+        <div className="lenis-content">
+          <div className="top-left-controls">
+            <div id="github-button" className="icon-button">
+              <GitHubIcon />
+            </div>
+            <ThemeToggle isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+            <div className="icon-button">
+              <TranslateToggle isActive={isPersian} onToggle={toggleLocale} />
+            </div>
           </div>
-          <ThemeToggle isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
-          <div className="icon-button">
-            <TranslateToggle isActive={isPersian} onToggle={toggleLocale} />
-          </div>
-        </div>
-        <h1>PulseNet</h1>
+          <h1>
+            {currentPage === 'ping'
+              ? 'PulseNet'
+              : currentPage === 'dns'
+                ? 'DNS Checker'
+                : currentPage === 'speed'
+                  ? 'Speed Test'
+                  : 'Settings'}
+          </h1>
 
-        <div id="ping-results">
-          <div className="add-host-container">
-            <button className="add-host-button" onClick={handleAddNewHost}>
-              <PencilIcon />
-              {texts.add}
-            </button>
-            <button
-              className={`edit-host-button ${isEditMode ? 'active' : ''}`}
-              onClick={() => setIsEditMode(!isEditMode)}
+          {currentPage === 'ping' ? (
+            <div id="ping-results">
+            <div className="add-host-container">
+              <button className="add-host-button" onClick={handleAddNewHost}>
+                <PencilIcon />
+                {texts.add}
+              </button>
+              <button
+                className={`edit-host-button ${isEditMode ? 'active' : ''}`}
+                onClick={() => setIsEditMode(!isEditMode)}
+              >
+                <EditIcon />
+                {texts.edit}
+              </button>
+            </div>
+
+            {/* All Hosts with dnd-kit drag and drop */}
+            {/* Editing Host - outside of SortableContext */}
+            {editingHost && (
+              <SortableItem
+                key="editing-temp"
+                id="editing-temp"
+                label={editingHost.label}
+                host={editingHost.host}
+                editing={true}
+                onSave={handleSaveHost}
+                onCancel={handleCancelEdit}
+                texts={texts}
+                statusTexts={statusTexts}
+                pingIntervalMs={pingIntervalMs}
+              />
+            )}
+
+            {/* All Hosts with dnd-kit drag and drop */}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
             >
-              <EditIcon />
-              {texts.edit}
-            </button>
-          </div>
-
-          {/* All Hosts with dnd-kit drag and drop */}
-          {/* Editing Host - outside of SortableContext */}
-          {editingHost && (
-            <SortableItem
-              key="editing-temp"
-              id="editing-temp"
-              label={editingHost.label}
-              host={editingHost.host}
-              editing={true}
-              onSave={handleSaveHost}
-              onCancel={handleCancelEdit}
-              texts={texts}
-              statusTexts={statusTexts}
-            />
-          )}
-
-          {/* All Hosts with dnd-kit drag and drop */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={allHosts.map(getHostKey)}
-              strategy={verticalListSortingStrategy}
-            >
-              {allHosts.map((host) => (
+              <SortableContext
+                items={allHosts.map(getHostKey)}
+                strategy={verticalListSortingStrategy}
+              >
+                {allHosts.map((host) => (
                 <SortableItem
                   key={getHostKey(host)}
                   id={getHostKey(host)}
@@ -726,13 +1060,260 @@ const App = () => {
                   onDelete={() => handleDeleteHost(host)}
                   texts={texts}
                   statusTexts={statusTexts}
+                  pingIntervalMs={pingIntervalMs}
                 />
               ))}
-            </SortableContext>
-          </DndContext>
+              </SortableContext>
+            </DndContext>
+          </div>
+        ) : currentPage === 'dns' ? (
+          <div className="dns-page">
+            <div className="dns-input-row">
+              <input
+                className="dns-input"
+                placeholder={texts.dnsPlaceholder}
+                value={dnsDomain}
+                onChange={(e) => setDnsDomain(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleDnsTest()}
+                disabled={dnsLoading}
+              />
+              <button className="dns-button" onClick={handleDnsTest} disabled={dnsLoading}>
+                {dnsLoading ? texts.dnsTesting : texts.dnsTest}
+              </button>
+            </div>
+            {dnsError && <div className="dns-error">{dnsError}</div>}
+            {(dnsResults.length > 0 || dnsLoading) && (
+              <>
+                <div className="dns-summary">
+                  <span className="dns-summary-good">{texts.usable} ({usableDns.length})</span>
+                  <span className="dns-summary-bad">{texts.blocked} ({blockedDns.length})</span>
+                </div>
+                <div className="dns-results">
+                  <div className="dns-column">
+                    <div className="dns-column-title good">{texts.usable}</div>
+                    {usableDns.map((item) => (
+                      <div key={`usable-${item.server}`} className="dns-card good">
+                        <div className="dns-card-main">{item.server}</div>
+                        <div className="dns-card-meta">{item.responseTimeMs}ms</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="dns-column">
+                    <div className="dns-column-title bad">{texts.blocked}</div>
+                    {blockedDns.map((item) => (
+                      <div key={`blocked-${item.server}`} className="dns-card bad">
+                        <div className="dns-card-main">{item.server}</div>
+                        <div className="dns-card-meta">
+                          {item.error ? item.error.toString() : texts.failed}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        ) : currentPage === 'speed' ? (
+          <div className="speed-page">
+            {(!speedStarted || speedLoading) ? (
+              <div className="speed-start">
+                <button
+                  className={`speed-play ${speedLoading ? 'loading' : ''}`}
+                  onClick={speedLoading ? handleStopSpeed : handleStartSpeed}
+                  aria-label={speedLoading ? 'Stop speed test' : 'Start speed test'}
+                >
+                  <span className="speed-play-ring"></span>
+                  <span className="speed-play-icon">
+                    {speedLoading ? <img src={pauseIcon} alt="" className="speed-play-icon-img" /> : <img src={playIcon} alt="" className="speed-play-icon-img" />}
+                  </span>
+                  <span className="speed-play-label">
+                    {speedLoading ? (texts.speedStop || 'Stop') : texts.speedStart}
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <div className={`speed-results ${speedLoading ? 'loading' : 'done'}`}>
+                <div className="speed-gauge">
+                  <div className="speed-ring"></div>
+                  <div className="speed-ring-fill"></div>
+                  <button
+                    className="speed-control speed-control-button"
+                    type="button"
+                    onClick={handleStartSpeed}
+                    aria-label="Start speed test"
+                  >
+                    <div className="speed-control-icon">
+                      {speedLoading ? <img src={pauseIcon} alt="" className="speed-control-icon-img" /> : <img src={playIcon} alt="" className="speed-control-icon-img" />}
+                    </div>
+                    <div className="speed-control-label">
+                      {speedLoading ? (texts.speedStop || 'Stop') : texts.speedStart}
+                    </div>
+                  </button>
+                </div>
+                <div className="speed-info">
+                  <div className="speed-info-item single">
+                    <span>IP</span>
+                    <strong>
+                      {speedMetrics && isIran(speedMetrics.country) ? (
+                        <img src={iranFlag} alt="" className="speed-ip-flag-img" />
+                      ) : (
+                        <span
+                          className={`speed-ip-flag ${speedMetrics ? getFlagClass(speedMetrics.country) : ''}`}
+                          aria-hidden="true"
+                        ></span>
+                      )}
+                      {speedMetrics ? speedMetrics.ip : 'N/A'}
+                    </strong>
+                  </div>
+                </div>
+                <div className="speed-cards">
+                  <div className="speed-card">
+                    <div className="speed-card-title">{texts.speedUpload}</div>
+                    <div className="speed-card-value">{speedMetrics ? speedMetrics.uploadMbps : 'N/A'} <span>Mbps</span></div>
+                  </div>
+                  <div className="speed-card">
+                    <div className="speed-card-title">{texts.speedDownload}</div>
+                    <div className="speed-card-value">{speedMetrics ? speedMetrics.downloadMbps : 'N/A'} <span>Mbps</span></div>
+                  </div>
+                  <div className="speed-card">
+                    <div className="speed-card-title">{texts.speedJitter}</div>
+                    <div className="speed-card-value">{speedMetrics ? speedMetrics.jitterMs : 'N/A'} <span>Ms</span></div>
+                  </div>
+                  <div className="speed-card">
+                    <div className="speed-card-title">{texts.speedLatency}</div>
+                    <div className="speed-card-value">{speedMetrics ? speedMetrics.latencyMs : 'N/A'} <span>Ms</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="speed-note">
+              <div className="speed-note-title">{texts.speedProvider}</div>
+              <div className="speed-note-body">{texts.speedNote}</div>
+            </div>
+          </div>
+        ) : (
+            <div className="settings-page">
+            <div className="settings-card">
+              <div className="settings-card-title">{texts.settingsGeneral}</div>
+              <div className="settings-item">
+                <div className="settings-label">
+                  <div className="settings-name">{texts.settingsAutoLaunch}</div>
+                  <div className="settings-hint">{texts.settingsAutoLaunchHint}</div>
+                </div>
+                <label className="settings-switch">
+                  <input
+                    type="checkbox"
+                    checked={autoLaunch}
+                    onChange={handleToggleAutoLaunch}
+                  />
+                  <span className="settings-slider"></span>
+                </label>
+              </div>
+              <div className="settings-item">
+                <div className="settings-label">
+                  <div className="settings-name">{texts.settingsUpdateTitle}</div>
+                  <div className="settings-hint">
+                    {updateStatus || texts.settingsUpdateHint}
+                  </div>
+                </div>
+                <button className="settings-button" onClick={handleCheckUpdates}>
+                  {texts.settingsUpdateButton}
+                </button>
+              </div>
+              <div className="settings-item">
+                <div className="settings-label">
+                  <div className="settings-name">{texts.closeActionTitle}</div>
+                  <div className="settings-hint">{texts.closeActionHint}</div>
+                </div>
+                <select
+                  className="settings-select"
+                  value={closeAction}
+                  onChange={(event) => setCloseAction(event.target.value)}
+                >
+                  <option value="hide">{texts.closeActionHide}</option>
+                  <option value="exit">{texts.closeActionExit}</option>
+                  <option value="ask">{texts.closeActionAsk}</option>
+                </select>
+              </div>
+              <div className="settings-item">
+                <div className="settings-label">
+                  <div className="settings-name">{texts.settingsPingInterval}</div>
+                  <div className="settings-hint">{texts.settingsPingIntervalHint}</div>
+                </div>
+                <input
+                  className="settings-input"
+                  type="number"
+                  min="250"
+                  step="250"
+                  value={pingIntervalMs}
+                  onChange={handlePingIntervalChange}
+                />
+              </div>
+            </div>
+            {updateModalOpen && (
+              <div className="update-modal">
+                <div className="update-modal-backdrop" onClick={handleUpdateDismiss}></div>
+                <div className="update-modal-card">
+                  <div className="update-modal-title">{texts.updateModalTitle}</div>
+                  <div className="update-modal-body">
+                    {texts.updateModalBody}
+                    {updateInfo && updateInfo.latestVersion ? ` (${updateInfo.latestVersion})` : ''}
+                  </div>
+                  <div className="update-modal-actions">
+                    <button className="update-modal-button primary" onClick={handleUpdateDownload}>
+                      {texts.updateModalYes}
+                    </button>
+                    <button className="update-modal-button" onClick={handleUpdateDismiss}>
+                      {texts.updateModalNo}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          )}
         </div>
       </div>
-    </>
+      {closeModalOpen && (
+        <div className="close-modal">
+          <div className="close-modal-backdrop" onClick={() => setCloseModalOpen(false)}></div>
+          <div className="close-modal-card">
+            <div className="close-modal-title">?Hide or Exit the application</div>
+            <label className="close-modal-remember">
+              <span>Remember my choice</span>
+              <input
+                type="checkbox"
+                checked={closeRememberChoice}
+                onChange={(event) => setCloseRememberChoice(event.target.checked)}
+              />
+            </label>
+            <div className="close-modal-actions">
+              <button className="close-modal-button primary" onClick={() => handleCloseChoice('hide')}>
+                Hide
+              </button>
+              <button className="close-modal-button ghost" onClick={() => handleCloseChoice('exit')}>
+                Exit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {adminModalOpen && (
+        <div className="close-modal">
+          <div className="close-modal-backdrop"></div>
+          <div className="close-modal-card">
+            <div className="close-modal-title">
+              This application uses the ICMP protocol to receive ping responses from servers; therefore, it needs to be run with administrator privileges.
+            </div>
+            <div className="close-modal-actions">
+              <button className="close-modal-button primary" onClick={handleAdminNoticeClose}>
+                Okey
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

@@ -1,0 +1,44 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev:ui -- --host",
+    "beforeBuildCommand": "npm run build:ui",
+    "devPath": "http://localhost:5173",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "PulseNet",
+    "version": "1.4.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": true
+    },
+    "windows": [
+      {
+        "title": "PulseNet",
+        "width": 1000,
+        "height": 600,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "fullscreen": false,
+        "maximized": false
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "systemTray": {
+      "iconPath": "icons/icon.ico",
+      "iconAsTemplate": false
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.pulsenet.app",
+      "icon": [
+        "icons/icon.ico"
+      ]
+    }
+  }
+}

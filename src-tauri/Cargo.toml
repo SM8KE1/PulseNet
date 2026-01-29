@@ -1,0 +1,22 @@
+[package]
+name = "pulsenet"
+version = "1.4.0"
+description = "Ping Monitoring"
+authors = ["SM0KE"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+tauri = { version = "1.5", features = ["api-all", "system-tray"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+auto-launch = "0.5"
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+trust-dns-resolver = "0.23"
+surge-ping = "0.8"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
