@@ -16,7 +16,8 @@ This tool allows you to check your real-time ping to major servers and stay info
 
 > **Note**: .
 
-<img width="800" height="600" alt="image" src="https://github.com/user-attachments/assets/3293f8a6-bf5c-4275-b645-d707b4f2ef84" />
+<img width="1000" height="600" alt="Screenshot 2026-02-01 232903" src="https://github.com/user-attachments/assets/c935ca7a-76b0-4179-8ae3-b270b95a9ad4" />
+
 
 
 
