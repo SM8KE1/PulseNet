@@ -12,9 +12,6 @@ It provides fast ping monitoring, DNS checking, speed testing, and in-app logs i
 - DNS Checker page to test multiple DNS servers for a target domain
 - Speed Test page (Cloudflare-based)
 - Log page
-- Theme switching (dark / light)
-- Language switching (English / Persian)
-- System tray support with quick actions
 - Auto-launch option from app settings
 
 ## Important Note
