@@ -5,6 +5,7 @@ It provides fast ping monitoring, DNS checking, speed testing, and in-app logs i
 
 [![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet/releases)
 [![Version](https://img.shields.io/badge/version-1.4.2-blue)](https://github.com/SM8KE1/PulseNet/releases)
+<img width="1000" height="600" alt="Screenshot 2026-02-17 223756" src="https://github.com/user-attachments/assets/084d6470-15cc-4542-9e9e-bb8c6b525e50" />
 
 ## Features
 
