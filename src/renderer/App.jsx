@@ -80,7 +80,12 @@ const useHosts = () => {
 };
 
 const usePing = (host, statusTexts, intervalMs) => {
-  const [pingData, setPingData] = useState({ status: '--', hasError: false });
+  const [pingData, setPingData] = useState({
+    status: '--',
+    hasError: false,
+    timeMs: null,
+    errorKind: null,
+  });
 
   useEffect(() => {
     const ping = async () => {
@@ -88,18 +93,43 @@ const usePing = (host, statusTexts, intervalMs) => {
         const result = await invoke('ping_host', { host });
         if (result.error) {
           if (result.error.includes('permission')) {
-            setPingData({ status: statusTexts.needAdmin, hasError: true });
+            setPingData({
+              status: statusTexts.needAdmin,
+              hasError: true,
+              timeMs: null,
+              errorKind: 'permission',
+            });
           } else {
-            setPingData({ status: statusTexts.error, hasError: true });
+            setPingData({
+              status: statusTexts.error,
+              hasError: true,
+              timeMs: null,
+              errorKind: 'error',
+            });
           }
         } else if (!result.alive) {
-          setPingData({ status: statusTexts.noResponse, hasError: true });
+          setPingData({
+            status: statusTexts.noResponse,
+            hasError: true,
+            timeMs: null,
+            errorKind: 'no-response',
+          });
         } else {
-          setPingData({ status: `${Math.round(result.time)}ms`, hasError: false });
+          setPingData({
+            status: `${Math.round(result.time)}ms`,
+            hasError: false,
+            timeMs: result.time,
+            errorKind: null,
+          });
         }
       } catch (e) {
         console.error('Ping IPC failed:', e);
-        setPingData({ status: statusTexts.ipcError, hasError: true });
+        setPingData({
+          status: statusTexts.ipcError,
+          hasError: true,
+          timeMs: null,
+          errorKind: 'ipc',
+        });
       }
     };
 
@@ -125,6 +155,8 @@ const SortableItem = ({
   texts,
   statusTexts,
   pingIntervalMs,
+  onLog,
+  pingAlertThresholdMs,
 }) => {
   const {
     attributes,
@@ -135,9 +167,36 @@ const SortableItem = ({
     isDragging,
   } = useSortable({ id });
 
-  const { status, hasError } = usePing(host, statusTexts, pingIntervalMs);
+  const { status, hasError, timeMs, errorKind } = usePing(host, statusTexts, pingIntervalMs);
   const [editLabel, setEditLabel] = useState(label || '');
   const [editHost, setEditHost] = useState(host || '');
+  const lastAlertRef = useRef(0);
+
+  useEffect(() => {
+    if (!onLog) return;
+    const now = Date.now();
+    const cooldownMs = 60_000;
+    if (now - lastAlertRef.current < cooldownMs) return;
+
+    if (hasError && errorKind && errorKind !== 'permission') {
+      lastAlertRef.current = now;
+      onLog({
+        type: 'alert',
+        title: texts.logPingAlert,
+        detail: `${label} • ${host} • ${status}`,
+      });
+      return;
+    }
+
+    if (typeof timeMs === 'number' && pingAlertThresholdMs && timeMs > pingAlertThresholdMs) {
+      lastAlertRef.current = now;
+      onLog({
+        type: 'alert',
+        title: texts.logPingHighLatency,
+        detail: `${label} • ${host} • ${Math.round(timeMs)}ms`,
+      });
+    }
+  }, [onLog, hasError, errorKind, timeMs, pingAlertThresholdMs, label, host, status, texts]);
 
   const handleSave = () => {
     if (editLabel.trim() && editHost.trim()) {
@@ -302,6 +361,18 @@ const App = () => {
   const { allHosts, setAllHosts, addHost } = useHosts();
   const [editingHost, setEditingHost] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [logEntries, setLogEntries] = useState(() => {
+    const stored = localStorage.getItem('logEntries');
+    if (!stored) return [];
+    try {
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  const [logFilter, setLogFilter] = useState('all');
+  const logAlertCooldownRef = useRef({});
 
   // dnd-kit sensors
   const sensors = useSensors(
@@ -325,6 +396,29 @@ const App = () => {
       localStorage.setItem('locale', next ? 'fa' : 'en');
       return next;
     });
+  };
+
+  const pingAlertThresholdMs = 250;
+
+  const addLogEntry = useCallback((entry) => {
+    setLogEntries((prev) => {
+      const next = [
+        {
+          id: Date.now() + Math.random(),
+          time: Date.now(),
+          ...entry,
+        },
+        ...prev,
+      ];
+      const trimmed = next.slice(0, 200);
+      localStorage.setItem('logEntries', JSON.stringify(trimmed));
+      return trimmed;
+    });
+  }, []);
+
+  const handleClearLogs = () => {
+    localStorage.removeItem('logEntries');
+    setLogEntries([]);
   };
 
   useEffect(() => {
@@ -449,12 +543,29 @@ const App = () => {
       const response = await invoke('test_dns_servers', { domain: sanitized });
       if (response.error) {
         setDnsError(texts.dnsInvalid);
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsFailed,
+          detail: sanitized,
+        });
       } else {
         setDnsResults(response.results || []);
+        const usableCount = (response.results || []).filter((item) => item.status).length;
+        const blockedCount = (response.results || []).filter((item) => !item.status).length;
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsResult,
+          detail: `${sanitized} • ${texts.usable} ${usableCount} / ${texts.blocked} ${blockedCount}`,
+        });
       }
     } catch (error) {
       console.error('DNS test failed:', error);
       setDnsError(texts.dnsFailed);
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDnsFailed,
+        detail: sanitized,
+      });
     } finally {
       setDnsLoading(false);
     }
@@ -472,6 +583,13 @@ const App = () => {
         if (result && !result.error) {
           setSpeedMetrics(result);
           setSpeedStarted(true);
+          const countryName = getCountryName(result.country);
+          const countryPart = countryName ? ` • ${countryName}` : '';
+          addLogEntry({
+            type: 'speed',
+            title: texts.logSpeedComplete,
+            detail: `${result.downloadMbps} Mbps ↓ • ${result.uploadMbps} Mbps ↑ • ${result.latencyMs} ms${countryPart}`,
+          });
         }
       })
       .catch((error) => {
@@ -585,6 +703,18 @@ const App = () => {
     return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
   };
 
+  const getCountryName = useCallback((countryCode) => {
+    if (!countryCode || countryCode.length !== 2) return '';
+    try {
+      const display = new Intl.DisplayNames([isPersian ? 'fa-IR' : 'en-US'], {
+        type: 'region',
+      });
+      return display.of(countryCode.toUpperCase()) || '';
+    } catch {
+      return '';
+    }
+  }, [isPersian]);
+
   const getFlagClass = (countryCode) => {
     if (!countryCode || countryCode.length !== 2) return '';
     const lower = countryCode.toLowerCase();
@@ -598,7 +728,7 @@ const App = () => {
     const minimizeBtn = document.getElementById('minimize-button');
     const closeBtn = document.getElementById('close-button');
     const githubBtn = document.getElementById('github-button');
-    const handleMinimize = () => requestCloseFlow();
+    const handleMinimize = () => invoke('perform_close_action', { action: 'minimize' });
     const handleClose = () => requestCloseFlow();
     const handleGithub = () => open('https://github.com/SM8KE1/PulseNet');
 
@@ -726,8 +856,19 @@ const App = () => {
       ping: 'Ping',
       dnsChecker: 'DNS Checker',
       speedTest: 'Speed Test',
-      alerts: 'Log (Coming soon)',
+      alerts: 'Log',
       settings: 'Settings',
+      logAll: 'All',
+      logSpeed: 'Speed Test',
+      logAlerts: 'Alerts',
+      logDns: 'DNS',
+      logEmpty: 'No logs yet.',
+      logClear: 'Clear logs',
+      logSpeedComplete: 'Speed test completed',
+      logDnsResult: 'DNS test result',
+      logDnsFailed: 'DNS test failed',
+      logPingAlert: 'Ping alert',
+      logPingHighLatency: 'High latency',
       settingsGeneral: 'General',
       settingsAutoLaunch: 'Auto launch',
       settingsAutoLaunchHint: 'Start app when Windows boots',
@@ -781,6 +922,17 @@ const App = () => {
       speedTest: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
       alerts: '\u0644\u0627\u06af',
       settings: '\u062a\u0646\u0638\u06cc\u0645\u0627\u062a',
+      logAll: '\u0647\u0645\u0647',
+      logSpeed: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
+      logAlerts: '\u0647\u0634\u062f\u0627\u0631\u0647\u0627',
+      logDns: 'DNS',
+      logEmpty: '\u0647\u0646\u0648\u0632 \u0644\u0627\u06af\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647 \u0627\u0633\u062a.',
+      logClear: '\u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646 \u0644\u0627\u06af\u200c\u0647\u0627',
+      logSpeedComplete: '\u067e\u0627\u06cc\u0627\u0646 \u062a\u0633\u062a \u0633\u0631\u0639\u062a',
+      logDnsResult: '\u0646\u062a\u06cc\u062c\u0647 \u062a\u0633\u062a DNS',
+      logDnsFailed: '\u062e\u0637\u0627 \u062f\u0631 \u062a\u0633\u062a DNS',
+      logPingAlert: '\u0647\u0634\u062f\u0627\u0631 \u067e\u06cc\u0646\u06af',
+      logPingHighLatency: '\u062a\u0627\u062e\u06cc\u0631 \u0628\u0627\u0644\u0627',
       settingsGeneral: '\u0639\u0645\u0648\u0645\u06cc',
       settingsAutoLaunch: '\u0627\u062c\u0631\u0627\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631',
       settingsAutoLaunchHint: '\u0628\u0627 \u0631\u0648\u0634\u0646 \u0634\u062f\u0646 \u0648\u06cc\u0646\u062f\u0648\u0632 \u0627\u062c\u0631\u0627 \u0634\u0648\u062f',
@@ -850,6 +1002,29 @@ const App = () => {
     return isPersian ? fa : en;
   }, [isPersian]);
 
+  const filteredLogs = useMemo(() => {
+    if (logFilter === 'all') return logEntries;
+    return logEntries.filter((entry) => entry.type === logFilter);
+  }, [logEntries, logFilter]);
+
+  useEffect(() => {
+    if (logEntries.some((entry) => entry.type === 'action')) {
+      setLogEntries((prev) => {
+        const next = prev.filter((entry) => entry.type !== 'action');
+        localStorage.setItem('logEntries', JSON.stringify(next));
+        return next;
+      });
+    }
+  }, [logEntries]);
+
+  const formatLogTime = useCallback((timestamp) => {
+    try {
+      return new Date(timestamp).toLocaleString(isPersian ? 'fa-IR' : 'en-US');
+    } catch {
+      return '';
+    }
+  }, [isPersian]);
+
 
 
 
@@ -873,7 +1048,9 @@ const App = () => {
                   ? 'Checking DNS'
                   : currentPage === 'speed'
                     ? 'Speed Test'
-                    : 'Settings'}
+                    : currentPage === 'log'
+                      ? 'Log'
+                      : 'Settings'}
             </div>
             </div>
           </div>
@@ -913,7 +1090,10 @@ const App = () => {
                 </span>
                 <span className="sidebar-item-text">{texts.speedTest}</span>
               </button>
-              <button className="sidebar-item">
+              <button
+                className={`sidebar-item ${currentPage === 'log' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('log')}
+              >
                 <span className="sidebar-item-icon" aria-hidden="true">
                   <img src={logIcon} alt="" className="sidebar-item-icon-img" />
                 </span>
@@ -1003,7 +1183,9 @@ const App = () => {
                 ? 'DNS Checker'
                 : currentPage === 'speed'
                   ? 'Speed Test'
-                  : 'Settings'}
+                  : currentPage === 'log'
+                    ? 'Log'
+                    : 'Settings'}
           </h1>
 
           {currentPage === 'ping' ? (
@@ -1036,6 +1218,8 @@ const App = () => {
                 texts={texts}
                 statusTexts={statusTexts}
                 pingIntervalMs={pingIntervalMs}
+                onLog={addLogEntry}
+                pingAlertThresholdMs={pingAlertThresholdMs}
               />
             )}
 
@@ -1061,6 +1245,8 @@ const App = () => {
                   texts={texts}
                   statusTexts={statusTexts}
                   pingIntervalMs={pingIntervalMs}
+                  onLog={addLogEntry}
+                  pingAlertThresholdMs={pingAlertThresholdMs}
                 />
               ))}
               </SortableContext>
@@ -1191,8 +1377,66 @@ const App = () => {
               <div className="speed-note-body">{texts.speedNote}</div>
             </div>
           </div>
+        ) : currentPage === 'log' ? (
+          <div className="log-page">
+            <div className="log-header">
+              <div className="log-filters">
+              <button
+                className={`log-filter ${logFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setLogFilter('all')}
+              >
+                {texts.logAll}
+              </button>
+              <button
+                className={`log-filter ${logFilter === 'speed' ? 'active' : ''}`}
+                onClick={() => setLogFilter('speed')}
+              >
+                {texts.logSpeed}
+              </button>
+              <button
+                className={`log-filter ${logFilter === 'alert' ? 'active' : ''}`}
+                onClick={() => setLogFilter('alert')}
+              >
+                {texts.logAlerts}
+              </button>
+              <button
+                className={`log-filter ${logFilter === 'dns' ? 'active' : ''}`}
+                onClick={() => setLogFilter('dns')}
+              >
+                {texts.logDns}
+              </button>
+              </div>
+              <button className="log-clear" onClick={handleClearLogs}>
+                {texts.logClear}
+              </button>
+            </div>
+            {filteredLogs.length === 0 ? (
+              <div className="log-empty">{texts.logEmpty}</div>
+            ) : (
+              <div className="log-list">
+                {filteredLogs.map((entry) => (
+                  <div key={entry.id} className={`log-item ${entry.type}`}>
+                    <div className="log-item-main">
+                      <div className="log-item-title">{entry.title}</div>
+                      <div className="log-item-detail">{entry.detail}</div>
+                    </div>
+                    <div className="log-item-meta">
+                      <span className={`log-badge ${entry.type}`}>
+                        {entry.type === 'speed'
+                          ? texts.logSpeed
+                          : entry.type === 'alert'
+                            ? texts.logAlerts
+                            : texts.logDns}
+                      </span>
+                      <span className="log-time">{formatLogTime(entry.time)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : (
-            <div className="settings-page">
+          <div className="settings-page">
             <div className="settings-card">
               <div className="settings-card-title">{texts.settingsGeneral}</div>
               <div className="settings-item">
