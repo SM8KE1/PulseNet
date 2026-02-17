@@ -785,17 +785,30 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    let unlisten;
+    let unlistenClose;
+    let unlistenTray;
     listen('close-requested', (event) => {
       const payload = event && event.payload ? event.payload : null;
       if (payload && payload.reason === 'exit') return;
       requestCloseFlow();
     }).then((fn) => {
-      unlisten = fn;
+      unlistenClose = fn;
+    });
+    listen('tray-open-page', (event) => {
+      const payload = event && event.payload ? event.payload : null;
+      const page = payload && payload.page ? payload.page : null;
+      if (page === 'settings') {
+        setCurrentPage('settings');
+      }
+    }).then((fn) => {
+      unlistenTray = fn;
     });
     return () => {
-      if (typeof unlisten === 'function') {
-        unlisten();
+      if (typeof unlistenClose === 'function') {
+        unlistenClose();
+      }
+      if (typeof unlistenTray === 'function') {
+        unlistenTray();
       }
     };
   }, [requestCloseFlow]);

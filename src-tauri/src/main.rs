@@ -11,7 +11,10 @@ use std::net::SocketAddr;
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{Manager, State, SystemTray, SystemTrayEvent, Window, WindowEvent};
+use tauri::{
+  AppHandle, CustomMenuItem, Manager, State, SystemTray, SystemTrayEvent, SystemTrayMenu,
+  SystemTrayMenuItem, Window, WindowEvent,
+};
 use tokio::net::lookup_host;
 use tokio::time::timeout;
 use trust_dns_resolver::config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts};
@@ -624,16 +627,47 @@ fn handle_close_requested(window: &Window, state: &State<AppState>) {
   let _ = window.emit("close-requested", serde_json::json!({ "reason": "close" }));
 }
 
+fn show_main_window(app: &AppHandle) {
+  if let Some(window) = app.get_window("main") {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+  }
+}
+
 fn main() {
+  let tray_menu = SystemTrayMenu::new()
+    .add_item(CustomMenuItem::new("show".to_string(), "Show PulseNet"))
+    .add_item(CustomMenuItem::new("settings".to_string(), "Settings"))
+    .add_native_item(SystemTrayMenuItem::Separator)
+    .add_item(CustomMenuItem::new("restart".to_string(), "Restart PulseNet"))
+    .add_item(CustomMenuItem::new("exit".to_string(), "Exit"));
+
   tauri::Builder::default()
     .manage(AppState::default())
-    .system_tray(SystemTray::new())
+    .system_tray(SystemTray::new().with_menu(tray_menu))
     .on_system_tray_event(|app, event| {
-      if let SystemTrayEvent::LeftClick { .. } = event {
-        if let Some(window) = app.get_window("main") {
-          let _ = window.show();
-          let _ = window.set_focus();
+      match event {
+        SystemTrayEvent::LeftClick { .. } => {
+          show_main_window(app);
         }
+        SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
+          "show" => show_main_window(app),
+          "settings" => {
+            show_main_window(app);
+            if let Some(window) = app.get_window("main") {
+              let _ = window.emit("tray-open-page", serde_json::json!({ "page": "settings" }));
+            }
+          }
+          "restart" => {
+            app.restart();
+          }
+          "exit" => {
+            app.exit(0);
+          }
+          _ => {}
+        }
+        _ => {}
       }
     })
     .on_window_event(|event| {

@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "PulseNet",
-    "version": "1.4.0"
+    "version": "1.4.2"
   },
   "tauri": {
     "allowlist": {
@@ -36,6 +36,11 @@
       "active": true,
       "targets": "all",
       "identifier": "com.pulsenet.app",
+      "windows": {
+        "nsis": {
+          "template": "nsis-template.nsi"
+        }
+      },
       "icon": [
         "icons/icon.ico"
       ]
