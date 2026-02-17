@@ -69,7 +69,7 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !endif
 
 !if "${INSTALLMODE}" == "currentUser"
-  RequestExecutionLevel user
+  RequestExecutionLevel highest
 !endif
 
 !if "${INSTALLMODE}" == "both"
@@ -264,6 +264,21 @@ Function PageLeaveReinstall
   reinst_uninstall:
     HideWindow
     ClearErrors
+    !if "${INSTALLMODE}" == "currentUser"
+      nsis_tauri_utils::FindProcessCurrentUser "${MAINBINARYNAME}.exe"
+    !else
+      nsis_tauri_utils::FindProcess "${MAINBINARYNAME}.exe"
+    !endif
+    Pop $R9
+    ${If} $R9 = 0
+      !if "${INSTALLMODE}" == "currentUser"
+        nsis_tauri_utils::KillProcessCurrentUser "${MAINBINARYNAME}.exe"
+      !else
+        nsis_tauri_utils::KillProcess "${MAINBINARYNAME}.exe"
+      !endif
+      Pop $R9
+      Sleep 500
+    ${EndIf}
 
     ${If} $R7 == "wix"
       ReadRegStr $R1 HKLM "$R6" "UninstallString"
