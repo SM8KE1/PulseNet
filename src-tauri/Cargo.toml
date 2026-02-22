@@ -1,6 +1,6 @@
 [package]
 name = "pulsenet"
-version = "1.4.2"
+version = "1.5.0"
 description = "Ping Monitoring"
 authors = ["SM0KE"]
 edition = "2021"
@@ -20,3 +20,4 @@ surge-ping = "0.8"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+

@@ -1,78 +1,53 @@
 # PulseNet
 
-PulseNet is a desktop network utility built with **Tauri + React** for Windows.
-It provides fast ping monitoring, DNS checking, speed testing, and in-app logs in a modern UI.
+PulseNet is a desktop network utility built with **Tauri + React**.
+It provides ping monitoring, DNS checking, speed testing, and logs in one lightweight app.
 
 [![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet/releases)
-[![Version](https://img.shields.io/badge/version-1.4.2-blue)](https://github.com/SM8KE1/PulseNet/releases)
-<img width="1000" height="600" alt="Screenshot 2026-02-17 223756" src="https://github.com/user-attachments/assets/084d6470-15cc-4542-9e9e-bb8c6b525e50" />
+[![Version](https://img.shields.io/badge/version-1.5.0-blue)](https://github.com/SM8KE1/PulseNet/releases)
 
-## Features
+## Main Features
 
-- Real-time ping monitoring for custom and default hosts
-- DNS Checker page to test multiple DNS servers for a target domain
-- Speed Test page (Cloudflare-based)
+- Ping Monitoring (real-time)
+- DNS Checker
+- Speed Test with provider switch (Cloudflare / Hetzner)
 - Log page
-- Auto-launch option from app settings
+- In-app update check (with optional beta/pre-release detection)
+- System tray support
 
-## Important Note
+## Install (Windows)
 
-PulseNet uses ICMP for ping responses.
-For accurate ping behavior on Windows, run the app with administrator privileges.
-
-## Installation (Windows)
-
-1. Download the latest installer from:
+1. Download latest installer from:
    - `https://github.com/SM8KE1/PulseNet/releases`
-2. Run `PulseNet Setup.exe`.
-3. Complete installation.
-4. (Recommended) Start PulseNet as Administrator.
+2. Run setup and finish installation.
 
-## Development Setup
+## Run as Administrator
 
-### Prerequisites (Windows)
+For reliable ICMP ping behavior on Windows, run PulseNet with administrator privileges.
 
-- Node.js (LTS recommended)
-- Rust toolchain (`rustup`)
-- Microsoft C++ Build Tools (or Visual Studio with C++ workload)
-- WebView2 Runtime (usually already installed on modern Windows)
+## Development
 
-### Install dependencies
+### Prerequisites
+
+- Node.js (LTS)
+- Rust (rustup)
+- Visual Studio Build Tools (C++ workload)
+- WebView2 Runtime
+
+### Commands
 
 ```bash
 npm install
-```
-
-### Run in development mode
-
-```bash
 npm run dev
-```
-
-### Build production bundles
-
-```bash
 npm run build
 ```
 
-## Project Structure
+## Project Paths
 
-- `src/renderer` - React UI
-- `src-tauri/src/main.rs` - Tauri backend commands and app lifecycle
-- `src-tauri/tauri.conf.json` - app/window/bundle configuration
-- `assets` - icons and static resources
+- `src/renderer` -> React UI
+- `src-tauri/src/main.rs` -> Tauri backend
+- `src-tauri/tauri.conf.json` -> app/window/bundle config
 
-## Troubleshooting
+## License
 
-- If `npm run dev` fails with Cargo errors:
-  - Ensure Rust is installed and available in terminal `PATH`.
-- If linker error appears (`link.exe not found`):
-  - Install Visual Studio Build Tools with C++ tools.
-- If app opens without window:
-  - Check tray icon and click `Show PulseNet`.
-- If ping shows permission issues:
-  - Run PulseNet as Administrator.
-
-## Contributing
-
-Issues and pull requests are welcome.
+ISC

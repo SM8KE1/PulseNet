@@ -342,11 +342,46 @@ const App = () => {
   const [speedStarted, setSpeedStarted] = useState(false);
   const [speedMetrics, setSpeedMetrics] = useState(null);
   const [speedLoading, setSpeedLoading] = useState(false);
+  const [speedProvider, setSpeedProvider] = useState(() => localStorage.getItem('speedProvider') || 'cloudflare');
+  const [betaUpdates, setBetaUpdates] = useState(() => {
+    const saved = localStorage.getItem('betaUpdates');
+    return saved === 'true';
+  });
   const speedRequestRef = useRef({ id: 0 });
   const [dnsDomain, setDnsDomain] = useState('');
   const [dnsResults, setDnsResults] = useState([]);
   const [dnsLoading, setDnsLoading] = useState(false);
   const [dnsError, setDnsError] = useState('');
+  const [dnsToolMode, setDnsToolMode] = useState('test');
+  const [dnsBenchmarkLoading, setDnsBenchmarkLoading] = useState(false);
+  const [dnsBenchmarkStats, setDnsBenchmarkStats] = useState([]);
+  const [dnsBenchmarkRounds, setDnsBenchmarkRounds] = useState(() => {
+    const saved = localStorage.getItem('dnsBenchmarkRounds');
+    const value = saved ? Number(saved) : 3;
+    return Number.isFinite(value) && value > 0 ? Math.min(value, 10) : 3;
+  });
+  const [customDnsInput, setCustomDnsInput] = useState('');
+  const [customDnsServers, setCustomDnsServers] = useState(() => {
+    const stored = localStorage.getItem('customDnsServers');
+    if (!stored) return [];
+    try {
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed.map((value) => String(value).trim()).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [batchDomainsInput, setBatchDomainsInput] = useState(() => {
+    return localStorage.getItem('dnsBatchDomainsInput') || '';
+  });
+  const [batchResults, setBatchResults] = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [dnsAdapters, setDnsAdapters] = useState([]);
+  const [dnsManagerLoading, setDnsManagerLoading] = useState(false);
+  const [dnsSelectedAdapter, setDnsSelectedAdapter] = useState('');
+  const [dnsPrimaryInput, setDnsPrimaryInput] = useState('');
+  const [dnsSecondaryInput, setDnsSecondaryInput] = useState('');
+  const [dnsManagerStatus, setDnsManagerStatus] = useState('');
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateInfo, setUpdateInfo] = useState(null);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
@@ -485,6 +520,26 @@ const App = () => {
   }, [isSidebarCollapsed]);
 
   useEffect(() => {
+    localStorage.setItem('speedProvider', speedProvider);
+  }, [speedProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('betaUpdates', String(betaUpdates));
+  }, [betaUpdates]);
+
+  useEffect(() => {
+    localStorage.setItem('dnsBatchDomainsInput', batchDomainsInput);
+  }, [batchDomainsInput]);
+
+  useEffect(() => {
+    localStorage.setItem('dnsBenchmarkRounds', String(dnsBenchmarkRounds));
+  }, [dnsBenchmarkRounds]);
+
+  useEffect(() => {
+    localStorage.setItem('customDnsServers', JSON.stringify(customDnsServers));
+  }, [customDnsServers]);
+
+  useEffect(() => {
     const savedName = localStorage.getItem('displayName');
     if (savedName) {
       setDisplayName(savedName);
@@ -529,8 +584,59 @@ const App = () => {
       .split('#')[0];
   };
 
+  const normalizeDnsServer = (value) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return '';
+    return trimmed;
+  };
+
+  const isValidDnsServer = (value) => {
+    const normalized = normalizeDnsServer(value);
+    if (!normalized) return false;
+    const ipv4 = /^(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)){3}$/;
+    const ipv6 = /^([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}$/;
+    return ipv4.test(normalized) || ipv6.test(normalized);
+  };
+
+  const handleAddCustomDns = () => {
+    const normalized = normalizeDnsServer(customDnsInput);
+    if (!isValidDnsServer(normalized)) {
+      setDnsError(texts.dnsCustomInvalid);
+      return;
+    }
+    setDnsError('');
+    setCustomDnsServers((prev) => {
+      if (prev.includes(normalized)) return prev;
+      return [...prev, normalized];
+    });
+    setCustomDnsInput('');
+  };
+
+  const handleRemoveCustomDns = (serverToRemove) => {
+    setCustomDnsServers((prev) => prev.filter((server) => server !== serverToRemove));
+  };
+
+  const runDnsCheck = async (domain) => {
+    const sanitized = sanitizeDomain(domain);
+    if (!sanitized) {
+      return { domain: '', results: [], error: 'invalid' };
+    }
+    try {
+      const response = await invoke('test_dns_servers_with_custom', {
+        domain: sanitized,
+        customServers: customDnsServers,
+      });
+      if (response && !response.error) {
+        return { domain: sanitized, results: response.results || [], error: null };
+      }
+      return { domain: sanitized, results: [], error: response?.error || 'failed' };
+    } catch {
+      return { domain: sanitized, results: [], error: 'failed' };
+    }
+  };
+
   const handleDnsTest = async () => {
-    if (dnsLoading) return;
+    if (dnsLoading || dnsBenchmarkLoading || batchLoading) return;
     const sanitized = sanitizeDomain(dnsDomain);
     if (!sanitized) {
       setDnsError(texts.dnsInvalid);
@@ -538,9 +644,10 @@ const App = () => {
     }
     setDnsError('');
     setDnsLoading(true);
+    setDnsBenchmarkStats([]);
     setDnsResults([]);
     try {
-      const response = await invoke('test_dns_servers', { domain: sanitized });
+      const response = await runDnsCheck(sanitized);
       if (response.error) {
         setDnsError(texts.dnsInvalid);
         addLogEntry({
@@ -549,9 +656,9 @@ const App = () => {
           detail: sanitized,
         });
       } else {
-        setDnsResults(response.results || []);
-        const usableCount = (response.results || []).filter((item) => item.status).length;
-        const blockedCount = (response.results || []).filter((item) => !item.status).length;
+        setDnsResults(response.results);
+        const usableCount = response.results.filter((item) => item.status).length;
+        const blockedCount = response.results.filter((item) => !item.status).length;
         addLogEntry({
           type: 'dns',
           title: texts.logDnsResult,
@@ -571,13 +678,212 @@ const App = () => {
     }
   };
 
+  const handleDnsBenchmark = async () => {
+    if (dnsLoading || dnsBenchmarkLoading || batchLoading) return;
+    const sanitized = sanitizeDomain(dnsDomain);
+    if (!sanitized) {
+      setDnsError(texts.dnsInvalid);
+      return;
+    }
+    const rounds = Math.max(1, Math.min(10, Number(dnsBenchmarkRounds) || 3));
+    setDnsError('');
+    setDnsBenchmarkLoading(true);
+    setDnsBenchmarkStats([]);
+    try {
+      const statsMap = new Map();
+      for (let i = 0; i < rounds; i += 1) {
+        const response = await runDnsCheck(sanitized);
+        if (response.error) {
+          throw new Error('dns-benchmark-failed');
+        }
+        for (const item of response.results) {
+          const existing = statsMap.get(item.server) || { server: item.server, ok: 0, total: 0, totalMs: 0 };
+          existing.total += 1;
+          if (item.status) {
+            existing.ok += 1;
+            existing.totalMs += Number(item.responseTimeMs) || 0;
+          }
+          statsMap.set(item.server, existing);
+        }
+        if (i === rounds - 1) {
+          setDnsResults(response.results);
+        }
+      }
+      const stats = Array.from(statsMap.values())
+        .map((item) => {
+          const averageMs = item.ok > 0 ? item.totalMs / item.ok : Number.POSITIVE_INFINITY;
+          return {
+            server: item.server,
+            averageMs,
+            successRate: Math.round((item.ok / item.total) * 100),
+          };
+        })
+        .sort((a, b) => a.averageMs - b.averageMs);
+      setDnsBenchmarkStats(stats);
+      const fastest = stats.filter((item) => Number.isFinite(item.averageMs)).slice(0, 3);
+      const fastestText = fastest
+        .map((item) => `${item.server} ${Math.round(item.averageMs)}ms`)
+        .join(' | ');
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDnsBenchmark,
+        detail: `${sanitized} • ${rounds}x • ${fastestText || texts.failed}`,
+      });
+    } catch (error) {
+      console.error('DNS benchmark failed:', error);
+      setDnsError(texts.dnsBenchmarkFailed);
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDnsFailed,
+        detail: `${sanitized} • ${texts.dnsBenchmarkFailed}`,
+      });
+    } finally {
+      setDnsBenchmarkLoading(false);
+    }
+  };
+
+  const handleBatchDomains = async () => {
+    if (dnsLoading || dnsBenchmarkLoading || batchLoading) return;
+    const domains = batchDomainsInput
+      .split(/\r?\n/)
+      .map((value) => sanitizeDomain(value))
+      .filter(Boolean)
+      .filter((value, index, arr) => arr.indexOf(value) === index)
+      .slice(0, 30);
+    if (domains.length === 0) {
+      setDnsError(texts.dnsBatchInvalid);
+      return;
+    }
+    setDnsError('');
+    setBatchLoading(true);
+    setBatchResults([]);
+    try {
+      const results = [];
+      for (const domain of domains) {
+        const response = await runDnsCheck(domain);
+        const usableCount = response.results.filter((item) => item.status).length;
+        const blockedCount = response.results.length - usableCount;
+        results.push({
+          domain,
+          status: usableCount > 0 ? 'resolved' : 'unresolved',
+          usableCount,
+          blockedCount,
+        });
+      }
+      setBatchResults(results);
+      const resolvedCount = results.filter((item) => item.status === 'resolved').length;
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDomainBatch,
+        detail: `${results.length} domains • ${texts.dnsResolved} ${resolvedCount}`,
+      });
+    } catch (error) {
+      console.error('Batch DNS check failed:', error);
+      setDnsError(texts.dnsBatchFailed);
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDnsFailed,
+        detail: texts.dnsBatchFailed,
+      });
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const loadDnsAdapters = useCallback(async () => {
+    try {
+      const adapters = await invoke('list_dns_adapters');
+      const normalized = Array.isArray(adapters) ? adapters : [];
+      setDnsAdapters(normalized);
+      if (normalized.length > 0) {
+        const exists = normalized.some((item) => item.name === dnsSelectedAdapter);
+        const selectedName = exists ? dnsSelectedAdapter : normalized[0].name;
+        setDnsSelectedAdapter(selectedName);
+        const selected = normalized.find((item) => item.name === selectedName);
+        if (selected) {
+          setDnsPrimaryInput(selected.dns?.[0] || '');
+          setDnsSecondaryInput(selected.dns?.[1] || '');
+        }
+      } else {
+        setDnsSelectedAdapter('');
+        setDnsPrimaryInput('');
+        setDnsSecondaryInput('');
+      }
+    } catch (error) {
+      console.error('Failed to load dns adapters:', error);
+      setDnsAdapters([]);
+    }
+  }, [dnsSelectedAdapter]);
+
+  const handleApplySystemDns = async () => {
+    if (!dnsSelectedAdapter || !isValidDnsServer(dnsPrimaryInput)) {
+      setDnsManagerStatus(texts.dnsCustomInvalid);
+      return;
+    }
+    if (dnsSecondaryInput.trim() && !isValidDnsServer(dnsSecondaryInput)) {
+      setDnsManagerStatus(texts.dnsCustomInvalid);
+      return;
+    }
+    setDnsManagerLoading(true);
+    setDnsManagerStatus('');
+    try {
+      const result = await invoke('set_adapter_dns', {
+        adapterName: dnsSelectedAdapter,
+        primaryDns: dnsPrimaryInput.trim(),
+        secondaryDns: dnsSecondaryInput.trim() || null,
+      });
+      if (result && result.success) {
+        setDnsManagerStatus(texts.dnsManagerApplied);
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsResult,
+          detail: `${dnsSelectedAdapter} • ${dnsPrimaryInput.trim()}${dnsSecondaryInput.trim() ? `, ${dnsSecondaryInput.trim()}` : ''}`,
+        });
+        await loadDnsAdapters();
+      } else {
+        setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
+      }
+    } catch (error) {
+      console.error('Failed to apply system dns:', error);
+      setDnsManagerStatus(texts.dnsManagerFailed);
+    } finally {
+      setDnsManagerLoading(false);
+    }
+  };
+
+  const handleResetSystemDns = async () => {
+    if (!dnsSelectedAdapter) return;
+    setDnsManagerLoading(true);
+    setDnsManagerStatus('');
+    try {
+      const result = await invoke('reset_adapter_dns', { adapterName: dnsSelectedAdapter });
+      if (result && result.success) {
+        setDnsManagerStatus(texts.dnsManagerResetDone);
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsResult,
+          detail: `${dnsSelectedAdapter} • DHCP`,
+        });
+        await loadDnsAdapters();
+      } else {
+        setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
+      }
+    } catch (error) {
+      console.error('Failed to reset system dns:', error);
+      setDnsManagerStatus(texts.dnsManagerFailed);
+    } finally {
+      setDnsManagerLoading(false);
+    }
+  };
+
   const handleStartSpeed = () => {
     speedRequestRef.current.id += 1;
     const requestId = speedRequestRef.current.id;
     setSpeedStarted(false);
     setSpeedMetrics(null);
     setSpeedLoading(true);
-    invoke('speedtest_cloudflare')
+    const command = speedProvider === 'hetzner' ? 'speedtest_hetzner' : 'speedtest_cloudflare';
+    invoke(command)
       .then((result) => {
         if (requestId !== speedRequestRef.current.id) return;
         if (result && !result.error) {
@@ -641,7 +947,7 @@ const App = () => {
   const handleCheckUpdates = async () => {
     setUpdateStatus(texts.updateChecking);
     try {
-      const result = await invoke('check_for_updates');
+      const result = await invoke('check_for_updates', { includePrerelease: betaUpdates });
       if (result && result.error) {
         setUpdateStatus(texts.updateFailed);
         return;
@@ -684,14 +990,33 @@ const App = () => {
     localStorage.setItem('pingIntervalMs', String(value));
   };
 
+  const handleBenchmarkRoundsChange = (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value) || value <= 0) return;
+    setDnsBenchmarkRounds(Math.min(10, Math.max(1, value)));
+  };
+
   useEffect(() => {
     if (currentPage !== 'speed') {
       handleStopSpeed();
     }
   }, [currentPage]);
 
+  useEffect(() => {
+    if (currentPage === 'dns' && dnsToolMode === 'manager') {
+      loadDnsAdapters();
+    }
+  }, [currentPage, dnsToolMode, loadDnsAdapters]);
+
+  useEffect(() => {
+    setDnsBenchmarkStats([]);
+  }, [dnsDomain]);
+
   const usableDns = dnsResults.filter((item) => item.status);
   const blockedDns = dnsResults.filter((item) => !item.status);
+  const topFastestDns = dnsBenchmarkStats
+    .filter((item) => Number.isFinite(item.averageMs))
+    .slice(0, 3);
 
   const getInitials = (name) => {
     const trimmed = name.trim();
@@ -868,6 +1193,8 @@ const App = () => {
       platform: 'Platform',
       ping: 'Ping',
       dnsChecker: 'DNS Checker',
+      dnsToolTest: 'DNS Test',
+      dnsToolManager: 'DNS Manager',
       speedTest: 'Speed Test',
       alerts: 'Log',
       settings: 'Settings',
@@ -875,11 +1202,15 @@ const App = () => {
       logSpeed: 'Speed Test',
       logAlerts: 'Alerts',
       logDns: 'DNS',
+      logExportJson: 'Export JSON',
+      logExportCsv: 'Export CSV',
       logEmpty: 'No logs yet.',
       logClear: 'Clear logs',
       logSpeedComplete: 'Speed test completed',
       logDnsResult: 'DNS test result',
       logDnsFailed: 'DNS test failed',
+      logDnsBenchmark: 'DNS benchmark',
+      logDomainBatch: 'Domain batch check',
       logPingAlert: 'Ping alert',
       logPingHighLatency: 'High latency',
       settingsGeneral: 'General',
@@ -890,11 +1221,14 @@ const App = () => {
       settingsUpdateTitle: 'Check Update Now',
       settingsUpdateHint: 'Compare your version with GitHub',
       settingsUpdateButton: 'Check',
+      settingsBetaUpdate: 'Beta updates',
+      settingsBetaUpdateHint: 'Include pre-release versions in update check',
       updateChecking: 'Checking...',
       updateUpToDate: 'You are up to date',
       updateFailed: 'Update check failed',
       updateModalTitle: 'Update available',
       updateModalBody: 'A newer version is available. Download now?',
+      updateModalPrereleaseWarning: 'Warning: this is a beta pre-release and is not recommended for normal users.',
       updateModalYes: 'Yes',
       updateModalNo: 'Not now',
       closeActionTitle: 'Action to closing',
@@ -912,8 +1246,41 @@ const App = () => {
       dnsPlaceholder: 'example.com',
       dnsTest: 'Test DNS',
       dnsTesting: 'Testing...',
+      dnsBenchmark: 'Benchmark DNS',
+      dnsBenchmarking: 'Benchmarking...',
+      dnsBenchmarkRounds: 'Rounds',
+      dnsTopFastest: 'Top fastest',
+      dnsAverage: 'Avg',
+      dnsSuccessRate: 'Success',
       dnsInvalid: 'Enter a domain (e.g. example.com)',
       dnsFailed: 'DNS test failed',
+      dnsBenchmarkDone: 'DNS benchmark completed',
+      dnsBenchmarkFailed: 'DNS benchmark failed',
+      dnsCustomTitle: 'Custom DNS tools',
+      dnsCustomPlaceholder: 'DNS server (e.g. 1.1.1.2)',
+      dnsAddServer: 'Add DNS',
+      dnsCustomEmpty: 'No custom DNS added',
+      dnsCustomInvalid: 'Enter a valid DNS IP',
+      dnsBatchTitle: 'Domain Batch Checker',
+      dnsBatchPlaceholder: 'One domain per line (e.g. youtube.com)',
+      dnsBatchRun: 'Run Batch',
+      dnsBatchRunning: 'Running...',
+      dnsBatchInvalid: 'Enter at least one valid domain',
+      dnsBatchDone: 'Batch check completed',
+      dnsBatchFailed: 'Batch check failed',
+      dnsResolved: 'Resolved',
+      dnsUnresolved: 'Unresolved',
+      dnsManagerTitle: 'System DNS Manager',
+      dnsManagerAdapter: 'Network adapter',
+      dnsManagerRefresh: 'Refresh',
+      dnsManagerPrimary: 'Primary DNS',
+      dnsManagerSecondary: 'Secondary DNS (optional)',
+      dnsManagerApply: 'Apply DNS',
+      dnsManagerReset: 'Reset (DHCP)',
+      dnsManagerNoAdapters: 'No adapter found',
+      dnsManagerApplied: 'DNS updated successfully',
+      dnsManagerResetDone: 'DNS reset to automatic',
+      dnsManagerFailed: 'Failed to update DNS',
       usable: 'Usable',
       blocked: 'Blocked',
       failed: 'failed',
@@ -923,8 +1290,10 @@ const App = () => {
         speedJitter: 'Jitter',
         speedStart: 'Start',
         speedStop: 'Stop',
-        speedProvider: 'Cloudflare',
-        speedNote: 'Note: If you use IP-changing tools, enable the Tunnel option in the tool settings to show updates.',
+      speedProviderTitle: 'Provider',
+      speedProviderCloudflare: 'Cloudflare',
+      speedProviderHetzner: 'Hetzner',
+      speedNote: 'Note: If you use IP-changing tools, enable the Tunnel option in the tool settings to show updates.',
         dragToReorder: 'Drag to reorder',
       deleteTitle: (label) => `Delete ${label}`,
     };
@@ -932,6 +1301,8 @@ const App = () => {
       platform: '\u067e\u0644\u062a\u0641\u0631\u0645',
       ping: '\u067e\u06cc\u0646\u06af',
       dnsChecker: '\u062a\u0633\u062a \u062f\u0627\u0645\u0646\u0647',
+      dnsToolTest: '\u062a\u0633\u062a DNS',
+      dnsToolManager: '\u0645\u062f\u06cc\u0631 DNS',
       speedTest: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
       alerts: '\u0644\u0627\u06af',
       settings: '\u062a\u0646\u0638\u06cc\u0645\u0627\u062a',
@@ -939,11 +1310,15 @@ const App = () => {
       logSpeed: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
       logAlerts: '\u0647\u0634\u062f\u0627\u0631\u0647\u0627',
       logDns: 'DNS',
+      logExportJson: '\u062e\u0631\u0648\u062c\u06cc JSON',
+      logExportCsv: '\u062e\u0631\u0648\u062c\u06cc CSV',
       logEmpty: '\u0647\u0646\u0648\u0632 \u0644\u0627\u06af\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647 \u0627\u0633\u062a.',
       logClear: '\u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646 \u0644\u0627\u06af\u200c\u0647\u0627',
       logSpeedComplete: '\u067e\u0627\u06cc\u0627\u0646 \u062a\u0633\u062a \u0633\u0631\u0639\u062a',
       logDnsResult: '\u0646\u062a\u06cc\u062c\u0647 \u062a\u0633\u062a DNS',
       logDnsFailed: '\u062e\u0637\u0627 \u062f\u0631 \u062a\u0633\u062a DNS',
+      logDnsBenchmark: '\u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS',
+      logDomainBatch: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc \u062f\u0627\u0645\u0646\u0647',
       logPingAlert: '\u0647\u0634\u062f\u0627\u0631 \u067e\u06cc\u0646\u06af',
       logPingHighLatency: '\u062a\u0627\u062e\u06cc\u0631 \u0628\u0627\u0644\u0627',
       settingsGeneral: '\u0639\u0645\u0648\u0645\u06cc',
@@ -954,11 +1329,14 @@ const App = () => {
       settingsUpdateTitle: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a',
       settingsUpdateHint: '\u0645\u0642\u0627\u06cc\u0633\u0647 \u0648\u0631\u0698\u0646 \u0628\u0627 \u06af\u06cc\u062a \u0647\u0627\u0628',
       settingsUpdateButton: '\u0628\u0631\u0631\u0633\u06cc',
+      settingsBetaUpdate: '\u0622\u067e\u062f\u06cc\u062a \u0628\u062a\u0627',
+      settingsBetaUpdateHint: '\u0646\u0633\u062e\u0647\u200c\u0647\u0627\u06cc pre-release \u0647\u0645 \u0628\u0631\u0631\u0633\u06cc \u0634\u0648\u062f',
       updateChecking: '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc...',
       updateUpToDate: '\u0648\u0631\u0698\u0646 \u0634\u0645\u0627 \u0628\u0647\u200c\u0631\u0648\u0632 \u0627\u0633\u062a',
       updateFailed: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
       updateModalTitle: '\u0622\u067e\u062f\u06cc\u062a \u062c\u062f\u06cc\u062f',
       updateModalBody: '\u0648\u0631\u0698\u0646 \u062c\u062f\u06cc\u062f\u06cc \u0648\u062c\u0648\u062f \u062f\u0627\u0631\u062f. \u062f\u0627\u0646\u0644\u0648\u062f \u0645\u06cc\u200c\u06a9\u0646\u06cc\u062f\u061f',
+      updateModalPrereleaseWarning: '\u0647\u0634\u062f\u0627\u0631: \u0627\u06cc\u0646 \u0646\u0633\u062e\u0647 \u0628\u062a\u0627 (pre-release) \u0627\u0633\u062a \u0648 \u0628\u0631\u0627\u06cc \u06a9\u0627\u0631\u0628\u0631 \u0639\u0627\u062f\u06cc \u067e\u06cc\u0634\u0646\u0647\u0627\u062f \u0646\u0645\u06cc\u200c\u0634\u0648\u062f.',
       updateModalYes: '\u0628\u0644\u0647',
       updateModalNo: '\u0641\u0639\u0644\u0627 \u0646\u0647',
       closeActionTitle: '\u0627\u0642\u062f\u0627\u0645 \u0647\u0646\u06af\u0627\u0645 \u0628\u0633\u062a\u0646',
@@ -976,8 +1354,41 @@ const App = () => {
       dnsPlaceholder: 'example.com',
       dnsTest: '\u062a\u0633\u062a DNS',
       dnsTesting: '\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a...',
+      dnsBenchmark: '\u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS',
+      dnsBenchmarking: '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0646\u0686\u0645\u0627\u0631\u06a9...',
+      dnsBenchmarkRounds: '\u062a\u0639\u062f\u0627\u062f \u062f\u0648\u0631',
+      dnsTopFastest: '\u0633\u0631\u06cc\u0639\u200c\u062a\u0631\u06cc\u0646\u200c\u0647\u0627',
+      dnsAverage: '\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646',
+      dnsSuccessRate: '\u0646\u0631\u062e \u0645\u0648\u0641\u0642\u06cc\u062a',
       dnsInvalid: '\u0644\u0637\u0641\u0627\u064b \u06cc\u06a9 \u062f\u0627\u0645\u0646\u0647 \u0648\u0627\u0631\u062f \u06a9\u0646\u06cc\u062f (\u0645\u062b\u0644\u0627\u064b example.com)',
       dnsFailed: '\u062a\u0633\u062a DNS \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      dnsBenchmarkDone: '\u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS \u062a\u0645\u0627\u0645 \u0634\u062f',
+      dnsBenchmarkFailed: '\u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      dnsCustomTitle: '\u0627\u0628\u0632\u0627\u0631 DNS \u0633\u0641\u0627\u0631\u0634\u06cc',
+      dnsCustomPlaceholder: '\u0622\u062f\u0631\u0633 DNS (\u0645\u062b\u0644 1.1.1.2)',
+      dnsAddServer: '\u0627\u0641\u0632\u0648\u062f\u0646 DNS',
+      dnsCustomEmpty: 'DNS \u0633\u0641\u0627\u0631\u0634\u06cc \u0627\u06cc \u0627\u0636\u0627\u0641\u0647 \u0646\u0634\u062f\u0647',
+      dnsCustomInvalid: '\u06cc\u06a9 IP \u0645\u0639\u062a\u0628\u0631 \u0628\u0631\u0627\u06cc DNS \u0648\u0627\u0631\u062f \u06a9\u0646\u06cc\u062f',
+      dnsBatchTitle: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0627\u0645\u0646\u0647\u200c\u0647\u0627',
+      dnsBatchPlaceholder: '\u0647\u0631 \u062e\u0637 \u06cc\u06a9 \u062f\u0627\u0645\u0646\u0647 (\u0645\u062b\u0644 youtube.com)',
+      dnsBatchRun: '\u0627\u062c\u0631\u0627\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc',
+      dnsBatchRunning: '\u062f\u0631 \u062d\u0627\u0644 \u0627\u062c\u0631\u0627...',
+      dnsBatchInvalid: '\u062d\u062f\u0627\u0642\u0644 \u06cc\u06a9 \u062f\u0627\u0645\u0646\u0647 \u0645\u0639\u062a\u0628\u0631 \u0648\u0627\u0631\u062f \u06a9\u0646\u06cc\u062f',
+      dnsBatchDone: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc \u062a\u0645\u0627\u0645 \u0634\u062f',
+      dnsBatchFailed: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      dnsResolved: '\u0642\u0627\u0628\u0644 \u0631\u06cc\u0632\u0627\u0644\u0648',
+      dnsUnresolved: '\u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u0631\u06cc\u0632\u0627\u0644\u0648',
+      dnsManagerTitle: '\u0645\u062f\u06cc\u0631 \u0633\u06cc\u0633\u062a\u0645 DNS',
+      dnsManagerAdapter: '\u06a9\u0627\u0631\u062a \u0634\u0628\u06a9\u0647',
+      dnsManagerRefresh: '\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc',
+      dnsManagerPrimary: 'DNS \u0627\u0635\u0644\u06cc',
+      dnsManagerSecondary: 'DNS \u062f\u0648\u0645 (\u0627\u062e\u062a\u06cc\u0627\u0631\u06cc)',
+      dnsManagerApply: '\u0627\u0639\u0645\u0627\u0644 DNS',
+      dnsManagerReset: '\u0628\u0627\u0632\u06af\u0634\u062a \u0628\u0647 DHCP',
+      dnsManagerNoAdapters: '\u06a9\u0627\u0631\u062a \u0634\u0628\u06a9\u0647\u200c\u0627\u06cc \u06cc\u0627\u0641\u062a \u0646\u0634\u062f',
+      dnsManagerApplied: 'DNS \u0628\u0627 \u0645\u0648\u0641\u0642\u06cc\u062a \u062a\u063a\u06cc\u06cc\u0631 \u06a9\u0631\u062f',
+      dnsManagerResetDone: 'DNS \u0628\u0647 \u062d\u0627\u0644\u062a \u062e\u0648\u062f\u06a9\u0627\u0631 \u0628\u0631\u06af\u0634\u062a',
+      dnsManagerFailed: '\u062a\u063a\u06cc\u06cc\u0631 DNS \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
       usable: '\u0642\u0627\u0628\u0644 \u0627\u0633\u062a\u0641\u0627\u062f\u0647',
       blocked: '\u0645\u0633\u062f\u0648\u062f \u0634\u062f\u0647',
       failed: '\u0646\u0627\u0645\u0648\u0641\u0642',
@@ -987,7 +1398,9 @@ const App = () => {
       speedJitter: '\u0646\u0648\u0633\u0627\u0646',
       speedStart: '\u0634\u0631\u0648\u0639',
       speedStop: '\u062a\u0648\u0642\u0641',
-      speedProvider: 'Cloudflare',
+      speedProviderTitle: '\u0633\u0631\u0648\u06cc\u0633',
+      speedProviderCloudflare: 'Cloudflare',
+      speedProviderHetzner: 'Hetzner',
       speedNote: '\u0646\u06a9\u062a\u0647 : \u0627\u06af\u0631 \u0627\u0632 \u0627\u0628\u0632\u0627\u0631 \u0647\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u0622\u06cc\u067e\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0645\u06cc\u06a9\u0646\u06cc\u062f \u0628\u0631\u0627\u06cc \u0646\u0645\u0627\u06cc\u0634 \u062a\u063a\u06cc\u06cc\u0631\u0627\u062a \u06af\u0632\u06cc\u0646\u0647 \u062a\u0648\u0646\u0644 \u0631\u0648 \u062f\u0631 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0627\u0628\u0632\u0627\u0631 \u0631\u0648\u0634\u0646 \u06a9\u0646\u06cc\u062f',
       dragToReorder: '\u062c\u0627\u0628\u062c\u0627\u06cc\u06cc \u0628\u0631\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u062a\u0631\u062a\u06cc\u0628',
       deleteTitle: (label) => `\u062d\u0630\u0641 ${label}`,
@@ -1037,6 +1450,48 @@ const App = () => {
       return '';
     }
   }, [isPersian]);
+
+  const downloadTextFile = useCallback((filename, content, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleExportLogsJson = () => {
+    if (!filteredLogs.length) return;
+    const payload = JSON.stringify(filteredLogs, null, 2);
+    downloadTextFile(`pulsenet-logs-${Date.now()}.json`, payload, 'application/json;charset=utf-8');
+  };
+
+  const handleExportLogsCsv = () => {
+    if (!filteredLogs.length) return;
+    const escapeCsv = (value) => {
+      const asText = String(value ?? '');
+      return `"${asText.replace(/"/g, '""')}"`;
+    };
+    const header = ['id', 'type', 'title', 'detail', 'time', 'displayTime'].join(',');
+    const rows = filteredLogs.map((entry) => {
+      return [
+        escapeCsv(entry.id),
+        escapeCsv(entry.type),
+        escapeCsv(entry.title),
+        escapeCsv(entry.detail),
+        escapeCsv(entry.time),
+        escapeCsv(formatLogTime(entry.time)),
+      ].join(',');
+    });
+    downloadTextFile(
+      `pulsenet-logs-${Date.now()}.csv`,
+      `${header}\n${rows.join('\n')}`,
+      'text/csv;charset=utf-8'
+    );
+  };
 
 
 
@@ -1267,53 +1722,278 @@ const App = () => {
           </div>
         ) : currentPage === 'dns' ? (
           <div className="dns-page">
-            <div className="dns-input-row">
-              <input
-                className="dns-input"
-                placeholder={texts.dnsPlaceholder}
-                value={dnsDomain}
-                onChange={(e) => setDnsDomain(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleDnsTest()}
-                disabled={dnsLoading}
-              />
-              <button className="dns-button" onClick={handleDnsTest} disabled={dnsLoading}>
-                {dnsLoading ? texts.dnsTesting : texts.dnsTest}
+            <div className="dns-tool-tabs">
+              <button
+                className={`dns-tool-tab ${dnsToolMode === 'test' ? 'active' : ''}`}
+                onClick={() => setDnsToolMode('test')}
+              >
+                {texts.dnsToolTest}
+              </button>
+              <button
+                className={`dns-tool-tab ${dnsToolMode === 'manager' ? 'active' : ''}`}
+                onClick={() => setDnsToolMode('manager')}
+              >
+                {texts.dnsToolManager}
               </button>
             </div>
             {dnsError && <div className="dns-error">{dnsError}</div>}
-            {(dnsResults.length > 0 || dnsLoading) && (
+            {dnsToolMode === 'test' ? (
               <>
-                <div className="dns-summary">
-                  <span className="dns-summary-good">{texts.usable} ({usableDns.length})</span>
-                  <span className="dns-summary-bad">{texts.blocked} ({blockedDns.length})</span>
+                <div className="dns-input-row">
+                  <input
+                    className="dns-input"
+                    placeholder={texts.dnsPlaceholder}
+                    value={dnsDomain}
+                    onChange={(e) => setDnsDomain(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleDnsTest()}
+                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                  />
+                  <button
+                    className="dns-button"
+                    onClick={handleDnsTest}
+                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                  >
+                    {dnsLoading ? texts.dnsTesting : texts.dnsTest}
+                  </button>
+                  <button
+                    className="dns-button secondary"
+                    onClick={handleDnsBenchmark}
+                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                  >
+                    {dnsBenchmarkLoading ? texts.dnsBenchmarking : texts.dnsBenchmark}
+                  </button>
+                  <div className="dns-rounds">
+                    <span>{texts.dnsBenchmarkRounds}</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={dnsBenchmarkRounds}
+                      onChange={handleBenchmarkRoundsChange}
+                      disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                    />
+                  </div>
                 </div>
-                <div className="dns-results">
-                  <div className="dns-column">
-                    <div className="dns-column-title good">{texts.usable}</div>
-                    {usableDns.map((item) => (
-                      <div key={`usable-${item.server}`} className="dns-card good">
-                        <div className="dns-card-main">{item.server}</div>
-                        <div className="dns-card-meta">{item.responseTimeMs}ms</div>
-                      </div>
-                    ))}
+                <div className="dns-custom-tools">
+                  <div className="dns-custom-title">{texts.dnsCustomTitle}</div>
+                  <div className="dns-custom-row">
+                    <input
+                      className="dns-input dns-custom-input"
+                      placeholder={texts.dnsCustomPlaceholder}
+                      value={customDnsInput}
+                      onChange={(event) => setCustomDnsInput(event.target.value)}
+                      onKeyDown={(event) => event.key === 'Enter' && handleAddCustomDns()}
+                      disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                    />
+                    <button
+                      className="dns-button dns-custom-add"
+                      onClick={handleAddCustomDns}
+                      disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                    >
+                      {texts.dnsAddServer}
+                    </button>
                   </div>
-                  <div className="dns-column">
-                    <div className="dns-column-title bad">{texts.blocked}</div>
-                    {blockedDns.map((item) => (
-                      <div key={`blocked-${item.server}`} className="dns-card bad">
-                        <div className="dns-card-main">{item.server}</div>
-                        <div className="dns-card-meta">
-                          {item.error ? item.error.toString() : texts.failed}
+                  {customDnsServers.length === 0 ? (
+                    <div className="dns-custom-empty">{texts.dnsCustomEmpty}</div>
+                  ) : (
+                    <div className="dns-custom-list">
+                      {customDnsServers.map((server) => (
+                        <button
+                          key={`custom-dns-${server}`}
+                          type="button"
+                          className="dns-custom-chip"
+                          onClick={() => handleRemoveCustomDns(server)}
+                          title={texts.deleteTitle(server)}
+                        >
+                          <span>{server}</span>
+                          <span className="dns-custom-chip-x">x</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {topFastestDns.length > 0 && (
+                  <div className="dns-benchmark">
+                    <div className="dns-benchmark-title">{texts.dnsTopFastest}</div>
+                    <div className="dns-benchmark-grid">
+                      {topFastestDns.map((item) => (
+                        <div key={`bench-${item.server}`} className="dns-benchmark-card">
+                          <div className="dns-benchmark-main">{item.server}</div>
+                          <div className="dns-benchmark-meta">
+                            {texts.dnsAverage} {Math.round(item.averageMs)}ms
+                          </div>
+                          <div className="dns-benchmark-meta">
+                            {texts.dnsSuccessRate} {item.successRate}%
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
+                )}
+                {(dnsResults.length > 0 || dnsLoading) && (
+                  <>
+                    <div className="dns-summary">
+                      <span className="dns-summary-good">{texts.usable} ({usableDns.length})</span>
+                      <span className="dns-summary-bad">{texts.blocked} ({blockedDns.length})</span>
+                    </div>
+                    <div className="dns-results">
+                      <div className="dns-column">
+                        <div className="dns-column-title good">{texts.usable}</div>
+                        {usableDns.map((item) => (
+                          <div key={`usable-${item.server}`} className="dns-card good">
+                            <div className="dns-card-main">{item.server}</div>
+                            <div className="dns-card-meta">{item.responseTimeMs}ms</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="dns-column">
+                        <div className="dns-column-title bad">{texts.blocked}</div>
+                        {blockedDns.map((item) => (
+                          <div key={`blocked-${item.server}`} className="dns-card bad">
+                            <div className="dns-card-main">{item.server}</div>
+                            <div className="dns-card-meta">
+                              {item.error ? item.error.toString() : texts.failed}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+                <div className="dns-batch">
+                  <div className="dns-batch-title">{texts.dnsBatchTitle}</div>
+                  <textarea
+                    className="dns-batch-input"
+                    placeholder={texts.dnsBatchPlaceholder}
+                    value={batchDomainsInput}
+                    onChange={(event) => setBatchDomainsInput(event.target.value)}
+                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                  />
+                  <button
+                    className="dns-button dns-batch-button"
+                    onClick={handleBatchDomains}
+                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                  >
+                    {batchLoading ? texts.dnsBatchRunning : texts.dnsBatchRun}
+                  </button>
+                  {batchResults.length > 0 && (
+                    <div className="dns-batch-results">
+                      {batchResults.map((item) => (
+                        <div
+                          key={`batch-${item.domain}`}
+                          className={`dns-batch-card ${item.status === 'resolved' ? 'resolved' : 'unresolved'}`}
+                        >
+                          <div className="dns-batch-main">{item.domain}</div>
+                          <div className="dns-batch-meta">
+                            {item.status === 'resolved' ? texts.dnsResolved : texts.dnsUnresolved}
+                          </div>
+                          <div className="dns-batch-meta">
+                            {texts.usable}: {item.usableCount} | {texts.blocked}: {item.blockedCount}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </>
+            ) : (
+              <div className="dns-manager">
+                <div className="dns-manager-title">{texts.dnsManagerTitle}</div>
+                <div className="dns-manager-row">
+                  <label>{texts.dnsManagerAdapter}</label>
+                  <div className="dns-manager-controls">
+                    <select
+                      className="dns-manager-select"
+                      value={dnsSelectedAdapter}
+                      onChange={(event) => {
+                        const selected = event.target.value;
+                        setDnsSelectedAdapter(selected);
+                        const adapter = dnsAdapters.find((item) => item.name === selected);
+                        if (adapter) {
+                          setDnsPrimaryInput(adapter.dns?.[0] || '');
+                          setDnsSecondaryInput(adapter.dns?.[1] || '');
+                        }
+                      }}
+                      disabled={dnsManagerLoading || dnsAdapters.length === 0}
+                    >
+                      {dnsAdapters.length === 0 ? (
+                        <option value="">{texts.dnsManagerNoAdapters}</option>
+                      ) : (
+                        dnsAdapters.map((adapter) => (
+                          <option key={`adapter-${adapter.name}`} value={adapter.name}>
+                            {adapter.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <button
+                      className="dns-button secondary"
+                      onClick={loadDnsAdapters}
+                      disabled={dnsManagerLoading}
+                    >
+                      {texts.dnsManagerRefresh}
+                    </button>
+                  </div>
+                </div>
+                <div className="dns-manager-row">
+                  <label>{texts.dnsManagerPrimary}</label>
+                  <input
+                    className="dns-input dns-manager-input"
+                    value={dnsPrimaryInput}
+                    onChange={(event) => setDnsPrimaryInput(event.target.value)}
+                    disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                  />
+                </div>
+                <div className="dns-manager-row">
+                  <label>{texts.dnsManagerSecondary}</label>
+                  <input
+                    className="dns-input dns-manager-input"
+                    value={dnsSecondaryInput}
+                    onChange={(event) => setDnsSecondaryInput(event.target.value)}
+                    disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                  />
+                </div>
+                <div className="dns-manager-actions">
+                  <button
+                    className="dns-button"
+                    onClick={handleApplySystemDns}
+                    disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                  >
+                    {texts.dnsManagerApply}
+                  </button>
+                  <button
+                    className="dns-button secondary"
+                    onClick={handleResetSystemDns}
+                    disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                  >
+                    {texts.dnsManagerReset}
+                  </button>
+                </div>
+                {dnsManagerStatus && <div className="dns-manager-status">{dnsManagerStatus}</div>}
+              </div>
             )}
           </div>
         ) : currentPage === 'speed' ? (
           <div className="speed-page">
+            <div className="speed-provider-switch">
+              <span className="speed-provider-label">{texts.speedProviderTitle}</span>
+              <div className="speed-provider-tabs">
+                <button
+                  className={`speed-provider-tab ${speedProvider === 'cloudflare' ? 'active' : ''}`}
+                  onClick={() => setSpeedProvider('cloudflare')}
+                  disabled={speedLoading}
+                >
+                  {texts.speedProviderCloudflare}
+                </button>
+                <button
+                  className={`speed-provider-tab ${speedProvider === 'hetzner' ? 'active' : ''}`}
+                  onClick={() => setSpeedProvider('hetzner')}
+                  disabled={speedLoading}
+                >
+                  {texts.speedProviderHetzner}
+                </button>
+              </div>
+            </div>
             {(!speedStarted || speedLoading) ? (
               <div className="speed-start">
                 <button
@@ -1386,7 +2066,9 @@ const App = () => {
               </div>
             )}
             <div className="speed-note">
-              <div className="speed-note-title">{texts.speedProvider}</div>
+              <div className="speed-note-title">
+                {speedProvider === 'hetzner' ? texts.speedProviderHetzner : texts.speedProviderCloudflare}
+              </div>
               <div className="speed-note-body">{texts.speedNote}</div>
             </div>
           </div>
@@ -1419,9 +2101,17 @@ const App = () => {
                 {texts.logDns}
               </button>
               </div>
-              <button className="log-clear" onClick={handleClearLogs}>
-                {texts.logClear}
-              </button>
+              <div className="log-actions">
+                <button className="log-clear" onClick={handleExportLogsJson} disabled={filteredLogs.length === 0}>
+                  {texts.logExportJson}
+                </button>
+                <button className="log-clear" onClick={handleExportLogsCsv} disabled={filteredLogs.length === 0}>
+                  {texts.logExportCsv}
+                </button>
+                <button className="log-clear danger" onClick={handleClearLogs} disabled={filteredLogs.length === 0}>
+                  {texts.logClear}
+                </button>
+              </div>
             </div>
             {filteredLogs.length === 0 ? (
               <div className="log-empty">{texts.logEmpty}</div>
@@ -1479,6 +2169,20 @@ const App = () => {
               </div>
               <div className="settings-item">
                 <div className="settings-label">
+                  <div className="settings-name">{texts.settingsBetaUpdate}</div>
+                  <div className="settings-hint">{texts.settingsBetaUpdateHint}</div>
+                </div>
+                <label className="settings-switch">
+                  <input
+                    type="checkbox"
+                    checked={betaUpdates}
+                    onChange={(event) => setBetaUpdates(event.target.checked)}
+                  />
+                  <span className="settings-slider"></span>
+                </label>
+              </div>
+              <div className="settings-item">
+                <div className="settings-label">
                   <div className="settings-name">{texts.closeActionTitle}</div>
                   <div className="settings-hint">{texts.closeActionHint}</div>
                 </div>
@@ -1515,6 +2219,9 @@ const App = () => {
                   <div className="update-modal-body">
                     {texts.updateModalBody}
                     {updateInfo && updateInfo.latestVersion ? ` (${updateInfo.latestVersion})` : ''}
+                    {updateInfo && updateInfo.isPrerelease ? (
+                      <div className="update-modal-warning">{texts.updateModalPrereleaseWarning}</div>
+                    ) : null}
                   </div>
                   <div className="update-modal-actions">
                     <button className="update-modal-button primary" onClick={handleUpdateDownload}>

@@ -1004,11 +1004,33 @@ h1 {
 .dns-page {
     margin-top: 100px;
 }
+.dns-tool-tabs {
+    display: inline-flex;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    padding: 4px;
+    gap: 4px;
+    margin: 0 auto 14px;
+}
+.dns-tool-tab {
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.72);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.dns-tool-tab.active {
+    background: rgba(58, 169, 255, 0.18);
+    color: #6fc1ff;
+}
 .dns-input-row {
     display: flex;
     gap: 12px;
     align-items: center;
     justify-content: center;
+    flex-wrap: wrap;
 }
 .dns-input {
     flex: 1;
@@ -1034,6 +1056,13 @@ h1 {
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     box-shadow: 0 4px 10px rgba(42, 120, 255, 0.25);
 }
+.dns-button.secondary {
+    background: linear-gradient(135deg, #4b5d77, #2f3f56);
+    box-shadow: 0 4px 10px rgba(20, 30, 45, 0.35);
+}
+.dns-button.secondary:hover {
+    box-shadow: 0 6px 14px rgba(20, 30, 45, 0.45);
+}
 .dns-button:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 14px rgba(42, 120, 255, 0.35);
@@ -1048,6 +1077,106 @@ h1 {
     margin-top: 12px;
     text-align: center;
     color: #f44336;
+}
+.dns-custom-tools {
+    margin-top: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 12px;
+}
+.dns-custom-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.86);
+    margin-bottom: 10px;
+}
+.dns-custom-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.dns-custom-input {
+    max-width: 280px;
+}
+.dns-custom-add {
+    min-width: 110px;
+}
+.dns-custom-empty {
+    margin-top: 10px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+}
+.dns-custom-list {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.dns-custom-chip {
+    border: 1px solid rgba(58, 169, 255, 0.35);
+    background: rgba(58, 169, 255, 0.12);
+    color: #cfe9ff;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+.dns-custom-chip-x {
+    opacity: 0.8;
+    font-weight: 700;
+}
+.dns-rounds {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 8px 10px;
+}
+.dns-rounds input {
+    width: 58px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    color: #ffffff;
+    text-align: center;
+    padding: 4px 6px;
+}
+.dns-benchmark {
+    margin-top: 14px;
+}
+.dns-benchmark-title {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.82);
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+.dns-benchmark-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+.dns-benchmark-card {
+    border-radius: 12px;
+    padding: 12px;
+    background: rgba(58, 169, 255, 0.1);
+    border: 1px solid rgba(58, 169, 255, 0.28);
+}
+.dns-benchmark-main {
+    font-weight: 700;
+    color: #d7ecff;
+    margin-bottom: 8px;
+}
+.dns-benchmark-meta {
+    font-size: 12px;
+    color: rgba(224, 241, 255, 0.8);
 }
 .dns-summary {
     margin-top: 20px;
@@ -1105,6 +1234,111 @@ h1 {
     color: rgba(255, 255, 255, 0.7);
     font-size: 12px;
 }
+.dns-batch {
+    margin-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.dns-batch-title {
+    text-align: center;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.82);
+}
+.dns-batch-input {
+    min-height: 100px;
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.24);
+    color: #ffffff;
+    padding: 12px;
+    resize: vertical;
+}
+.dns-batch-input:focus {
+    outline: none;
+    border-color: rgba(58, 169, 255, 0.6);
+}
+.dns-batch-button {
+    align-self: center;
+}
+.dns-batch-results {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.dns-batch-card {
+    border-radius: 12px;
+    padding: 12px;
+    border: 1px solid transparent;
+}
+.dns-batch-card.resolved {
+    background: rgba(76, 175, 80, 0.1);
+    border-color: rgba(76, 175, 80, 0.28);
+}
+.dns-batch-card.unresolved {
+    background: rgba(244, 67, 54, 0.1);
+    border-color: rgba(244, 67, 54, 0.24);
+}
+.dns-batch-main {
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+.dns-batch-meta {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.75);
+}
+.dns-manager {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 14px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.dns-manager-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.84);
+}
+.dns-manager-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.dns-manager-row label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+}
+.dns-manager-controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.dns-manager-select {
+    min-width: 280px;
+    max-width: 420px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.22);
+    color: #ffffff;
+    padding: 10px 12px;
+}
+.dns-manager-input {
+    max-width: 420px;
+}
+.dns-manager-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.dns-manager-status {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+}
 .light-theme .dns-input {
     border-color: rgba(0, 0, 0, 0.2);
     background: #ffffff;
@@ -1126,6 +1360,43 @@ h1 {
     flex-direction: column;
     align-items: center;
     gap: 24px;
+}
+.speed-provider-switch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+.speed-provider-label {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+    font-weight: 600;
+}
+.speed-provider-tabs {
+    display: inline-flex;
+    gap: 6px;
+    padding: 4px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.03);
+}
+.speed-provider-tab {
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.75);
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.speed-provider-tab.active {
+    background: rgba(58, 169, 255, 0.18);
+    color: #6fc1ff;
+}
+.speed-provider-tab:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 .speed-start {
     margin-top: 40px;
@@ -1173,6 +1444,82 @@ h1 {
     position: relative;
     font-size: 32px;
     color: #ffffff;
+}
+.light-theme .dns-tool-tabs {
+    border-color: rgba(0, 0, 0, 0.12);
+}
+.light-theme .dns-tool-tab {
+    color: rgba(0, 0, 0, 0.62);
+}
+.light-theme .dns-tool-tab.active {
+    background: rgba(29, 94, 255, 0.12);
+    color: #1d5eff;
+}
+.light-theme .dns-rounds {
+    color: rgba(0, 0, 0, 0.7);
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.1);
+}
+.light-theme .dns-manager {
+    border-color: rgba(0, 0, 0, 0.1);
+    background: #ffffff;
+}
+.light-theme .dns-manager-title {
+    color: rgba(0, 0, 0, 0.78);
+}
+.light-theme .dns-manager-row label,
+.light-theme .dns-manager-status {
+    color: rgba(0, 0, 0, 0.62);
+}
+.light-theme .dns-manager-select {
+    border-color: rgba(0, 0, 0, 0.15);
+    background: #ffffff;
+    color: #121212;
+}
+.light-theme .dns-custom-tools {
+    border-color: rgba(0, 0, 0, 0.1);
+    background: #ffffff;
+}
+.light-theme .dns-custom-title {
+    color: rgba(0, 0, 0, 0.75);
+}
+.light-theme .dns-custom-empty {
+    color: rgba(0, 0, 0, 0.55);
+}
+.light-theme .dns-custom-chip {
+    border-color: rgba(29, 94, 255, 0.28);
+    background: rgba(29, 94, 255, 0.1);
+    color: #1d5eff;
+}
+.light-theme .dns-rounds input {
+    border-color: rgba(0, 0, 0, 0.18);
+    background: #ffffff;
+    color: #121212;
+}
+.light-theme .dns-benchmark-title,
+.light-theme .dns-batch-title {
+    color: rgba(0, 0, 0, 0.75);
+}
+.light-theme .dns-benchmark-card {
+    background: rgba(29, 94, 255, 0.08);
+    border-color: rgba(29, 94, 255, 0.22);
+}
+.light-theme .dns-benchmark-main {
+    color: #1d5eff;
+}
+.light-theme .dns-benchmark-meta {
+    color: rgba(0, 0, 0, 0.62);
+}
+.light-theme .dns-batch {
+    border-top-color: rgba(0, 0, 0, 0.1);
+}
+.light-theme .dns-batch-input {
+    border-color: rgba(0, 0, 0, 0.15);
+    background: #ffffff;
+    color: #121212;
+}
+.light-theme .dns-batch-meta {
+    color: rgba(0, 0, 0, 0.62);
 }
 .speed-play-icon-img {
     width: 32px;
@@ -1368,6 +1715,20 @@ h1 {
 .light-theme .speed-start-hint {
     color: rgba(0, 0, 0, 0.6);
 }
+.light-theme .speed-provider-label {
+    color: rgba(0, 0, 0, 0.62);
+}
+.light-theme .speed-provider-tabs {
+    border-color: rgba(0, 0, 0, 0.12);
+    background: #ffffff;
+}
+.light-theme .speed-provider-tab {
+    color: rgba(0, 0, 0, 0.68);
+}
+.light-theme .speed-provider-tab.active {
+    background: rgba(29, 94, 255, 0.12);
+    color: #1d5eff;
+}
 .light-theme .speed-play {
     background: rgba(0, 0, 0, 0.05);
 }
@@ -1443,6 +1804,12 @@ h1 {
     gap: 10px;
     flex-wrap: wrap;
 }
+.log-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
 .log-clear {
     border: 1px solid rgba(255, 255, 255, 0.12);
     background: rgba(255, 255, 255, 0.06);
@@ -1452,6 +1819,17 @@ h1 {
     cursor: pointer;
     font-weight: 600;
     transition: all 0.2s ease;
+}
+.log-clear:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.log-clear.danger {
+    border-color: rgba(255, 99, 99, 0.25);
+    color: #ffb5b5;
+}
+.log-clear.danger:hover {
+    background: rgba(255, 99, 99, 0.12);
 }
 .log-clear:hover {
     background: rgba(255, 255, 255, 0.12);
@@ -1552,6 +1930,10 @@ h1 {
     border-color: rgba(0, 0, 0, 0.12);
     background: #ffffff;
     color: rgba(0, 0, 0, 0.7);
+}
+.light-theme .log-clear.danger {
+    border-color: rgba(201, 47, 47, 0.25);
+    color: #b51f1f;
 }
 .light-theme .log-clear:hover {
     background: rgba(0, 0, 0, 0.05);
@@ -1787,6 +2169,16 @@ h1 {
     font-size: 13px;
     color: rgba(255, 255, 255, 0.7);
 }
+.update-modal-warning {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 152, 0, 0.4);
+    background: rgba(255, 152, 0, 0.15);
+    color: #ffd08a;
+    font-size: 12px;
+    line-height: 1.5;
+}
 .update-modal-actions {
     display: flex;
     gap: 10px;
@@ -1813,6 +2205,11 @@ h1 {
 }
 .light-theme .update-modal-body {
     color: rgba(0, 0, 0, 0.6);
+}
+.light-theme .update-modal-warning {
+    border-color: rgba(194, 118, 0, 0.35);
+    background: rgba(255, 193, 7, 0.14);
+    color: #754c00;
 }
 .light-theme .update-modal-button {
     color: #121212;
