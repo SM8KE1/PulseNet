@@ -8,8 +8,10 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::net::SocketAddr;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::{
   AppHandle, CustomMenuItem, Manager, State, SystemTray, SystemTrayEvent, SystemTrayMenu,
@@ -33,6 +35,9 @@ const DOWNLOAD_BYTES: usize = 10 * 1024 * 1024;
 const UPLOAD_BYTES: usize = 5 * 1024 * 1024;
 const PING_SAMPLES: usize = 5;
 const DNS_TIMEOUT_MS: u64 = 4000;
+const DNS_ADAPTER_CACHE_TTL_MS: u128 = 5000;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 const DNS_SERVERS: [&str; 8] = [
   "8.8.8.8",
@@ -96,7 +101,7 @@ struct DnsResponse {
   results: Vec<DnsResult>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct DnsAdapter {
   name: String,
   dns: Vec<String>,
@@ -246,10 +251,39 @@ fn sanitize_domain(input: &str) -> String {
     .to_string()
 }
 
+fn now_millis() -> u128 {
+  std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map(|duration| duration.as_millis())
+    .unwrap_or(0)
+}
+
+#[cfg(target_os = "windows")]
+fn dns_adapter_cache() -> &'static Mutex<Option<(u128, Vec<DnsAdapter>)>> {
+  static CACHE: OnceLock<Mutex<Option<(u128, Vec<DnsAdapter>)>>> = OnceLock::new();
+  CACHE.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(target_os = "windows")]
+fn clear_dns_adapter_cache() {
+  if let Ok(mut guard) = dns_adapter_cache().lock() {
+    *guard = None;
+  }
+}
+
 #[cfg(target_os = "windows")]
 fn run_powershell(command: &str) -> Result<String, String> {
   let output = Command::new("powershell")
-    .args(["-NoProfile", "-Command", command])
+    .creation_flags(CREATE_NO_WINDOW)
+    .args([
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      command,
+    ])
     .output()
     .map_err(|error| error.to_string())?;
   if output.status.success() {
@@ -261,6 +295,48 @@ fn run_powershell(command: &str) -> Result<String, String> {
 
 fn ps_escape_single(value: &str) -> String {
   value.replace('\'', "''")
+}
+
+#[cfg(target_os = "windows")]
+fn parse_dns_adapters_from_output(output: &str) -> Vec<DnsAdapter> {
+  if output.is_empty() {
+    return vec![];
+  }
+  let parsed = match serde_json::from_str::<serde_json::Value>(output) {
+    Ok(value) => value,
+    Err(_) => return vec![],
+  };
+  let mut adapters = Vec::new();
+  let items = if let Some(array) = parsed.as_array() {
+    array.clone()
+  } else {
+    vec![parsed]
+  };
+  for item in items {
+    let name = item
+      .get("InterfaceAlias")
+      .and_then(|value| value.as_str())
+      .unwrap_or("")
+      .trim()
+      .to_string();
+    if name.is_empty() {
+      continue;
+    }
+    let dns = item
+      .get("ServerAddresses")
+      .and_then(|value| value.as_array())
+      .map(|values| {
+        values
+          .iter()
+          .filter_map(|value| value.as_str().map(|s| s.trim().to_string()))
+          .filter(|value| !value.is_empty())
+          .collect::<Vec<String>>()
+      })
+      .unwrap_or_default();
+    adapters.push(DnsAdapter { name, dns });
+  }
+  adapters.sort_by(|left, right| left.name.cmp(&right.name));
+  adapters
 }
 
 #[tauri::command]
@@ -491,56 +567,35 @@ async fn test_dns_servers_with_custom(domain: String, custom_servers: Option<Vec
 }
 
 #[tauri::command]
-fn list_dns_adapters() -> Vec<DnsAdapter> {
+fn list_dns_adapters(force_refresh: Option<bool>) -> Vec<DnsAdapter> {
   #[cfg(target_os = "windows")]
   {
+    let force_refresh = force_refresh.unwrap_or(false);
+    if !force_refresh {
+      if let Ok(guard) = dns_adapter_cache().lock() {
+        if let Some((cached_at, adapters)) = guard.as_ref() {
+          if now_millis().saturating_sub(*cached_at) <= DNS_ADAPTER_CACHE_TTL_MS {
+            return adapters.clone();
+          }
+        }
+      }
+    }
+
     let command = "Get-DnsClientServerAddress -AddressFamily IPv4 | Select-Object InterfaceAlias,ServerAddresses | ConvertTo-Json -Depth 4 -Compress";
     let output = match run_powershell(command) {
       Ok(stdout) => stdout,
       Err(_) => return vec![],
     };
-    if output.is_empty() {
-      return vec![];
+    let adapters = parse_dns_adapters_from_output(&output);
+    if let Ok(mut guard) = dns_adapter_cache().lock() {
+      *guard = Some((now_millis(), adapters.clone()));
     }
-    let parsed = match serde_json::from_str::<serde_json::Value>(&output) {
-      Ok(value) => value,
-      Err(_) => return vec![],
-    };
-    let mut adapters = Vec::new();
-    let items = if let Some(array) = parsed.as_array() {
-      array.clone()
-    } else {
-      vec![parsed]
-    };
-    for item in items {
-      let name = item
-        .get("InterfaceAlias")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-      if name.is_empty() {
-        continue;
-      }
-      let dns = item
-        .get("ServerAddresses")
-        .and_then(|value| value.as_array())
-        .map(|values| {
-          values
-            .iter()
-            .filter_map(|value| value.as_str().map(|s| s.trim().to_string()))
-            .filter(|value| !value.is_empty())
-            .collect::<Vec<String>>()
-        })
-        .unwrap_or_default();
-      adapters.push(DnsAdapter { name, dns });
-    }
-    adapters.sort_by(|left, right| left.name.cmp(&right.name));
     return adapters;
   }
 
   #[cfg(not(target_os = "windows"))]
   {
+    let _ = force_refresh;
     vec![]
   }
 }
@@ -570,10 +625,13 @@ fn set_adapter_dns(adapter_name: String, primary_dns: String, secondary_dns: Opt
       servers.join(",")
     );
     match run_powershell(&command) {
-      Ok(_) => DnsManagerResult {
-        success: true,
-        error: None,
-      },
+      Ok(_) => {
+        clear_dns_adapter_cache();
+        DnsManagerResult {
+          success: true,
+          error: None,
+        }
+      }
       Err(error) => DnsManagerResult {
         success: false,
         error: Some(error),
@@ -607,10 +665,13 @@ fn reset_adapter_dns(adapter_name: String) -> DnsManagerResult {
       ps_escape_single(adapter)
     );
     match run_powershell(&command) {
-      Ok(_) => DnsManagerResult {
-        success: true,
-        error: None,
-      },
+      Ok(_) => {
+        clear_dns_adapter_cache();
+        DnsManagerResult {
+          success: true,
+          error: None,
+        }
+      }
       Err(error) => DnsManagerResult {
         success: false,
         error: Some(error),

@@ -1,4 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
@@ -17,8 +18,10 @@ import pauseIcon from '../../assets/pause.svg';
 import speedIcon from '../../assets/speed.svg';
 import logIcon from '../../assets/log.svg';
 import settingIcon from '../../assets/setting.svg';
+import aboutIcon from '../../assets/about.svg';
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
@@ -35,6 +38,52 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+
+const DRAG_OVERLAY_DROP_ANIMATION = {
+  duration: 220,
+  easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+};
+
+const PING_GOOD_THRESHOLD_MS = 120;
+const SPEED_PHASE_DOWNLOAD_DELAY_MS = 1200;
+
+const getLatencyTone = (timeMs, warningThresholdMs) => {
+  if (!Number.isFinite(timeMs)) return 'neutral';
+  if (timeMs > warningThresholdMs) return 'warning';
+  if (timeMs <= PING_GOOD_THRESHOLD_MS) return 'good';
+  return 'neutral';
+};
+
+const buildSparklinePath = (points, width, height, padding) => {
+  if (!points.length) return '';
+  const chartWidth = width - padding * 2;
+  const chartHeight = height - padding * 2;
+  const values = points.map((point) => point.value).filter((value) => Number.isFinite(value));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(1, max - min);
+
+  let path = '';
+  let segmentOpen = false;
+
+  points.forEach((point) => {
+    const x = padding + point.ratio * chartWidth;
+    if (!Number.isFinite(point.value)) {
+      segmentOpen = false;
+      return;
+    }
+    const normalized = (point.value - min) / range;
+    const y = padding + chartHeight - normalized * chartHeight;
+    if (!segmentOpen) {
+      path += `M ${x.toFixed(2)} ${y.toFixed(2)}`;
+      segmentOpen = true;
+    } else {
+      path += ` L ${x.toFixed(2)} ${y.toFixed(2)}`;
+    }
+  });
+
+  return path;
+};
 
 // Custom hook for managing all hosts with localStorage
 const useHosts = () => {
@@ -70,7 +119,7 @@ const useHosts = () => {
   }, []);
 
   const addHost = (host) => {
-    const newHost = { type: 'custom', id: Date.now(), ...host };
+    const newHost = { type: 'custom', id: Date.now(), pinned: false, paused: false, ...host };
     const newHosts = [newHost, ...allHosts];
     setAllHosts(newHosts);
     localStorage.setItem('allHosts', JSON.stringify(newHosts));
@@ -79,19 +128,61 @@ const useHosts = () => {
   return { allHosts, setAllHosts, addHost };
 };
 
-const usePing = (host, statusTexts, intervalMs) => {
+const usePing = (host, statusTexts, intervalMs, enabled = true, showPausedState = true, trackHistory = true) => {
   const [pingData, setPingData] = useState({
     status: '--',
     hasError: false,
     timeMs: null,
     errorKind: null,
   });
+  const [history, setHistory] = useState([]);
+  const maxHistoryPoints = useMemo(() => {
+    const safeInterval = Math.max(250, Number(intervalMs) || 1000);
+    return Math.max(18, Math.min(100, Math.floor(60_000 / safeInterval)));
+  }, [intervalMs]);
 
   useEffect(() => {
+    setHistory((prev) => prev.slice(-maxHistoryPoints));
+  }, [maxHistoryPoints]);
+
+  useEffect(() => {
+    if (!trackHistory) {
+      setHistory([]);
+    }
+  }, [trackHistory]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const pushHistory = (value) => {
+      if (!trackHistory) return;
+      setHistory((prev) => {
+        const next = [...prev, value];
+        if (next.length > maxHistoryPoints) {
+          next.splice(0, next.length - maxHistoryPoints);
+        }
+        return next;
+      });
+    };
+
+    if (!enabled) {
+      if (showPausedState) {
+        setPingData((prev) => ({
+          ...prev,
+          status: statusTexts.paused,
+          hasError: false,
+          timeMs: null,
+          errorKind: 'paused',
+        }));
+      }
+      return () => {};
+    }
+
     const ping = async () => {
       try {
         const result = await invoke('ping_host', { host });
+        if (isCancelled) return;
         if (result.error) {
+          pushHistory(null);
           if (result.error.includes('permission')) {
             setPingData({
               status: statusTexts.needAdmin,
@@ -108,6 +199,7 @@ const usePing = (host, statusTexts, intervalMs) => {
             });
           }
         } else if (!result.alive) {
+          pushHistory(null);
           setPingData({
             status: statusTexts.noResponse,
             hasError: true,
@@ -115,6 +207,7 @@ const usePing = (host, statusTexts, intervalMs) => {
             errorKind: 'no-response',
           });
         } else {
+          pushHistory(result.time);
           setPingData({
             status: `${Math.round(result.time)}ms`,
             hasError: false,
@@ -123,6 +216,8 @@ const usePing = (host, statusTexts, intervalMs) => {
           });
         }
       } catch (e) {
+        if (isCancelled) return;
+        pushHistory(null);
         console.error('Ping IPC failed:', e);
         setPingData({
           status: statusTexts.ipcError,
@@ -136,10 +231,47 @@ const usePing = (host, statusTexts, intervalMs) => {
     ping();
     const intervalId = setInterval(ping, intervalMs);
 
-    return () => clearInterval(intervalId);
-  }, [host, statusTexts, intervalMs]);
+    return () => {
+      isCancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [host, statusTexts, intervalMs, maxHistoryPoints, enabled, showPausedState, trackHistory]);
 
-  return pingData;
+  return {
+    ...pingData,
+    history,
+    isPending: enabled && history.length === 0,
+  };
+};
+
+const PingSparkline = ({ values, tone }) => {
+  const width = 120;
+  const height = 34;
+  const padding = 4;
+  const points = useMemo(() => {
+    if (!Array.isArray(values) || values.length === 0) return [];
+    const lastIndex = Math.max(1, values.length - 1);
+    return values.map((value, index) => ({
+      value: Number.isFinite(value) ? value : null,
+      ratio: index / lastIndex,
+    }));
+  }, [values]);
+
+  const path = useMemo(() => buildSparklinePath(points, width, height, padding), [points]);
+
+  if (!path) {
+    return (
+      <div className="ping-sparkline empty" aria-hidden="true">
+        <span className="ping-sparkline-empty-line"></span>
+      </div>
+    );
+  }
+
+  return (
+    <svg className={`ping-sparkline ${tone}`} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+      <path className="ping-sparkline-path" d={path}></path>
+    </svg>
+  );
 };
 
 const SortableItem = ({
@@ -152,33 +284,67 @@ const SortableItem = ({
   onDelete,
   showDelete = false,
   isEditMode = false,
+  isSorting = false,
+  isDragSource = false,
   texts,
   statusTexts,
   pingIntervalMs,
   onLog,
   pingAlertThresholdMs,
+  isPinned = false,
+  isPaused = false,
+  isCopied = false,
+  optimizationEnabled = false,
+  onTogglePin,
+  onTogglePause,
+  onCopy,
 }) => {
   const {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
   } = useSortable({ id });
 
-  const { status, hasError, timeMs, errorKind } = usePing(host, statusTexts, pingIntervalMs);
+  const shouldPollPing = !isPaused && !isEditMode && !editing;
+  const { status, hasError, timeMs, errorKind, history, isPending } = usePing(
+    host,
+    statusTexts,
+    pingIntervalMs,
+    shouldPollPing,
+    isPaused,
+    !optimizationEnabled
+  );
   const [editLabel, setEditLabel] = useState(label || '');
   const [editHost, setEditHost] = useState(host || '');
   const lastAlertRef = useRef(0);
 
+  const tone = useMemo(() => {
+    if (isPaused || errorKind === 'paused') return 'neutral';
+    if (hasError) return 'bad';
+    return getLatencyTone(timeMs, pingAlertThresholdMs);
+  }, [isPaused, errorKind, hasError, timeMs, pingAlertThresholdMs]);
+
+  const toneLabel = useMemo(() => {
+    if (isPaused || errorKind === 'paused') return texts.statusPaused;
+    if (hasError) return texts.statusDown;
+    if (!Number.isFinite(timeMs)) return texts.statusUnknown;
+    if (tone === 'good') return texts.statusGood;
+    if (tone === 'warning') return texts.statusWarning;
+    return texts.statusStable;
+  }, [isPaused, errorKind, hasError, timeMs, tone, texts]);
+
   useEffect(() => {
     if (!onLog) return;
+    if (isEditMode) return;
     const now = Date.now();
     const cooldownMs = 60_000;
     if (now - lastAlertRef.current < cooldownMs) return;
 
-    if (hasError && errorKind && errorKind !== 'permission') {
+    if (hasError && errorKind && errorKind !== 'permission' && errorKind !== 'paused') {
       lastAlertRef.current = now;
       onLog({
         type: 'alert',
@@ -196,7 +362,7 @@ const SortableItem = ({
         detail: `${label} • ${host} • ${Math.round(timeMs)}ms`,
       });
     }
-  }, [onLog, hasError, errorKind, timeMs, pingAlertThresholdMs, label, host, status, texts]);
+  }, [onLog, isEditMode, hasError, errorKind, timeMs, pingAlertThresholdMs, label, host, status, texts]);
 
   const handleSave = () => {
     if (editLabel.trim() && editHost.trim()) {
@@ -222,7 +388,9 @@ const SortableItem = ({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition: isDragging ? undefined : (transition || 'transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94)'),
+    transition: isDragging ? 'none' : (transition || 'transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)'),
+    zIndex: isDragging ? 1200 : undefined,
+    willChange: 'transform',
   };
 
   if (editing) {
@@ -263,15 +431,16 @@ const SortableItem = ({
     <div
       ref={setNodeRef}
       style={style}
-      className={`ping-card ${isDragging ? 'dragging' : ''} ${isEditMode ? 'edit-mode' : ''}`}
+      className={`ping-card ${isDragging ? 'dragging' : ''} ${isEditMode ? 'edit-mode' : ''} ${isSorting ? 'sorting' : ''} ${isDragSource ? 'drag-source' : ''} ${isPinned ? 'pinned' : ''} ${isPaused ? 'paused' : ''}`}
       {...attributes}
     >
       {isEditMode && (
         <div
+          ref={setActivatorNodeRef}
           className="drag-handle active"
           {...listeners}
           title={texts.dragToReorder}
-          style={{ cursor: 'grab' }}
+          style={{ cursor: 'grab', touchAction: 'none' }}
         >
           <div className="drag-line"></div>
           <div className="drag-line"></div>
@@ -279,11 +448,47 @@ const SortableItem = ({
         </div>
       )}
       <div className="ping-info">
-        <div className="ping-label">{label}</div>
+        <div className="ping-label-row">
+          <div className="ping-label">{label}</div>
+          {!isEditMode && <span className={`status-pill ${tone}`}>{toneLabel}</span>}
+        </div>
         <div className="ping-ip">{host}</div>
+        {!isEditMode && (
+          <div className="ping-sparkline-slot">
+            {!optimizationEnabled && <PingSparkline values={history} tone={tone} />}
+          </div>
+        )}
       </div>
       <div className="ping-actions">
-        <div className={`ping-value ${hasError ? 'error' : ''}`}>{status}</div>
+        <div className={`ping-value ${hasError ? 'error' : ''} ${!optimizationEnabled && isPending ? 'skeleton-line' : ''}`}>{status}</div>
+        {!showDelete && (
+          <div className="ping-quick-actions">
+            <button
+              type="button"
+              className={`ping-quick-btn ${isCopied ? 'active' : ''}`}
+              onClick={() => onCopy?.(id, host)}
+              title={isCopied ? texts.copied : texts.copy}
+            >
+              {isCopied ? texts.copiedShort : texts.copyShort}
+            </button>
+            <button
+              type="button"
+              className={`ping-quick-btn ${isPinned ? 'active' : ''}`}
+              onClick={() => onTogglePin?.(id)}
+              title={isPinned ? texts.unpin : texts.pin}
+            >
+              {isPinned ? texts.unpinShort : texts.pinShort}
+            </button>
+            <button
+              type="button"
+              className={`ping-quick-btn ${isPaused ? 'active warning' : ''}`}
+              onClick={() => onTogglePause?.(id)}
+              title={isPaused ? texts.resume : texts.pause}
+            >
+              {isPaused ? texts.resumeShort : texts.pauseShort}
+            </button>
+          </div>
+        )}
         {showDelete && (
           <button className="delete-button" onClick={handleDelete} title={texts.deleteTitle(label)}>
             ×
@@ -316,6 +521,85 @@ const TranslateToggle = ({ isActive, onToggle }) => (
   </div>
 );
 
+const AppDropdown = ({
+  value,
+  onChange,
+  options,
+  disabled = false,
+  className = '',
+  placeholder = '',
+}) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const selected = options.find((item) => item.value === value);
+
+  useEffect(() => {
+    const onDocumentMouseDown = (event) => {
+      if (!rootRef.current) return;
+      if (!rootRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    const onEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocumentMouseDown);
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      document.removeEventListener('mousedown', onDocumentMouseDown);
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [value]);
+
+  return (
+    <div
+      ref={rootRef}
+      className={`app-dropdown ${open ? 'open' : ''} ${disabled ? 'disabled' : ''} ${className}`.trim()}
+    >
+      <button
+        type="button"
+        className="app-dropdown-trigger"
+        onClick={() => !disabled && setOpen((prev) => !prev)}
+        disabled={disabled}
+      >
+        <span className="app-dropdown-text">{selected?.label || placeholder}</span>
+        <span className="app-dropdown-chevron" aria-hidden="true"></span>
+      </button>
+      <div className="app-dropdown-menu">
+        {options.map((item) => (
+          <button
+            key={`drop-${item.value}`}
+            type="button"
+            className={`app-dropdown-item ${item.value === value ? 'active' : ''}`}
+            onClick={() => {
+              if (item.value !== value) onChange(item.value);
+              setOpen(false);
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const DragPreviewCard = ({ label, host, moveText }) => (
+  <div className="ping-card drag-preview" aria-hidden="true">
+    <div className="ping-info">
+      <div className="ping-label">{label}</div>
+      <div className="ping-ip">{host}</div>
+    </div>
+    <div className="ping-actions">
+      <div className="ping-value preview-hint">{moveText}</div>
+    </div>
+  </div>
+);
+
 const App = () => {
   const [isDarkMode, setDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -334,6 +618,10 @@ const App = () => {
     const saved = localStorage.getItem('pingIntervalMs');
     return saved ? Number(saved) : 2000;
   });
+  const [optimizationEnabled, setOptimizationEnabled] = useState(() => {
+    const saved = localStorage.getItem('optimizationEnabled');
+    return saved === 'true';
+  });
   const [autoLaunch, setAutoLaunch] = useState(true);
   const [closeAction, setCloseAction] = useState(() => {
     const saved = localStorage.getItem('closeAction');
@@ -342,16 +630,21 @@ const App = () => {
   const [speedStarted, setSpeedStarted] = useState(false);
   const [speedMetrics, setSpeedMetrics] = useState(null);
   const [speedLoading, setSpeedLoading] = useState(false);
+  const [speedPhase, setSpeedPhase] = useState('idle');
   const [speedProvider, setSpeedProvider] = useState(() => localStorage.getItem('speedProvider') || 'cloudflare');
   const [betaUpdates, setBetaUpdates] = useState(() => {
     const saved = localStorage.getItem('betaUpdates');
     return saved === 'true';
   });
   const speedRequestRef = useRef({ id: 0 });
+  const speedPhaseTimersRef = useRef([]);
   const [dnsDomain, setDnsDomain] = useState('');
   const [dnsResults, setDnsResults] = useState([]);
   const [dnsLoading, setDnsLoading] = useState(false);
   const [dnsError, setDnsError] = useState('');
+  const [dnsSearch, setDnsSearch] = useState('');
+  const [dnsStatusFilter, setDnsStatusFilter] = useState('all');
+  const [dnsSortKey, setDnsSortKey] = useState('latency-asc');
   const [dnsToolMode, setDnsToolMode] = useState('test');
   const [dnsBenchmarkLoading, setDnsBenchmarkLoading] = useState(false);
   const [dnsBenchmarkStats, setDnsBenchmarkStats] = useState([]);
@@ -408,10 +701,19 @@ const App = () => {
   });
   const [logFilter, setLogFilter] = useState('all');
   const logAlertCooldownRef = useRef({});
+  const copyTimerRef = useRef(0);
+  const [copyFeedbackKey, setCopyFeedbackKey] = useState('');
+  const [activeDragId, setActiveDragId] = useState(null);
+  const lastOverIdRef = useRef(null);
+  const lenisRef = useRef(null);
 
   // dnd-kit sensors
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -455,6 +757,45 @@ const App = () => {
     localStorage.removeItem('logEntries');
     setLogEntries([]);
   };
+
+  const clearSpeedPhaseTimers = useCallback(() => {
+    speedPhaseTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+    speedPhaseTimersRef.current = [];
+  }, []);
+
+  const handleCopyText = useCallback(async (text, key) => {
+    const payload = String(text || '').trim();
+    if (!payload) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload);
+      } else {
+        const tempInput = document.createElement('textarea');
+        tempInput.value = payload;
+        tempInput.style.position = 'fixed';
+        tempInput.style.opacity = '0';
+        document.body.appendChild(tempInput);
+        tempInput.focus();
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+      }
+      setCopyFeedbackKey(key);
+      window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopyFeedbackKey('');
+      }, 1400);
+    } catch (error) {
+      console.error('Copy failed:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(copyTimerRef.current);
+      clearSpeedPhaseTimers();
+    };
+  }, [clearSpeedPhaseTimers]);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -790,30 +1131,32 @@ const App = () => {
     }
   };
 
-  const loadDnsAdapters = useCallback(async () => {
+  const loadDnsAdapters = useCallback(async (forceRefresh = false) => {
     try {
-      const adapters = await invoke('list_dns_adapters');
+      const adapters = await invoke('list_dns_adapters', { forceRefresh });
       const normalized = Array.isArray(adapters) ? adapters : [];
       setDnsAdapters(normalized);
-      if (normalized.length > 0) {
-        const exists = normalized.some((item) => item.name === dnsSelectedAdapter);
-        const selectedName = exists ? dnsSelectedAdapter : normalized[0].name;
-        setDnsSelectedAdapter(selectedName);
+      if (normalized.length === 0) {
+        setDnsSelectedAdapter('');
+        setDnsPrimaryInput('');
+        setDnsSecondaryInput('');
+        return;
+      }
+      setDnsSelectedAdapter((current) => {
+        const exists = normalized.some((item) => item.name === current);
+        const selectedName = exists ? current : normalized[0].name;
         const selected = normalized.find((item) => item.name === selectedName);
         if (selected) {
           setDnsPrimaryInput(selected.dns?.[0] || '');
           setDnsSecondaryInput(selected.dns?.[1] || '');
         }
-      } else {
-        setDnsSelectedAdapter('');
-        setDnsPrimaryInput('');
-        setDnsSecondaryInput('');
-      }
+        return selectedName;
+      });
     } catch (error) {
       console.error('Failed to load dns adapters:', error);
       setDnsAdapters([]);
     }
-  }, [dnsSelectedAdapter]);
+  }, []);
 
   const handleApplySystemDns = async () => {
     if (!dnsSelectedAdapter || !isValidDnsServer(dnsPrimaryInput)) {
@@ -839,7 +1182,7 @@ const App = () => {
           title: texts.logDnsResult,
           detail: `${dnsSelectedAdapter} • ${dnsPrimaryInput.trim()}${dnsSecondaryInput.trim() ? `, ${dnsSecondaryInput.trim()}` : ''}`,
         });
-        await loadDnsAdapters();
+        await loadDnsAdapters(true);
       } else {
         setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
       }
@@ -864,7 +1207,7 @@ const App = () => {
           title: texts.logDnsResult,
           detail: `${dnsSelectedAdapter} • DHCP`,
         });
-        await loadDnsAdapters();
+        await loadDnsAdapters(true);
       } else {
         setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
       }
@@ -877,11 +1220,18 @@ const App = () => {
   };
 
   const handleStartSpeed = () => {
+    clearSpeedPhaseTimers();
     speedRequestRef.current.id += 1;
     const requestId = speedRequestRef.current.id;
     setSpeedStarted(false);
     setSpeedMetrics(null);
     setSpeedLoading(true);
+    setSpeedPhase('download');
+    speedPhaseTimersRef.current.push(window.setTimeout(() => {
+      if (requestId === speedRequestRef.current.id) {
+        setSpeedPhase('upload');
+      }
+    }, SPEED_PHASE_DOWNLOAD_DELAY_MS));
     const command = speedProvider === 'hetzner' ? 'speedtest_hetzner' : 'speedtest_cloudflare';
     invoke(command)
       .then((result) => {
@@ -889,6 +1239,7 @@ const App = () => {
         if (result && !result.error) {
           setSpeedMetrics(result);
           setSpeedStarted(true);
+          setSpeedPhase('final');
           const countryName = getCountryName(result.country);
           const countryPart = countryName ? ` • ${countryName}` : '';
           addLogEntry({
@@ -896,23 +1247,29 @@ const App = () => {
             title: texts.logSpeedComplete,
             detail: `${result.downloadMbps} Mbps ↓ • ${result.uploadMbps} Mbps ↑ • ${result.latencyMs} ms${countryPart}`,
           });
+          return;
         }
+        setSpeedPhase('idle');
       })
       .catch((error) => {
         console.error('Speed test failed:', error);
+        setSpeedPhase('idle');
       })
       .finally(() => {
         if (requestId === speedRequestRef.current.id) {
           setSpeedLoading(false);
+          clearSpeedPhaseTimers();
         }
       });
   };
 
   const handleStopSpeed = () => {
+    clearSpeedPhaseTimers();
     speedRequestRef.current.id += 1;
     setSpeedLoading(false);
     setSpeedStarted(false);
     setSpeedMetrics(null);
+    setSpeedPhase('idle');
   };
 
   const handleToggleAutoLaunch = async () => {
@@ -990,6 +1347,12 @@ const App = () => {
     localStorage.setItem('pingIntervalMs', String(value));
   };
 
+  const handleToggleOptimization = (event) => {
+    const next = Boolean(event.target.checked);
+    setOptimizationEnabled(next);
+    localStorage.setItem('optimizationEnabled', String(next));
+  };
+
   const handleBenchmarkRoundsChange = (event) => {
     const value = Number(event.target.value);
     if (!Number.isFinite(value) || value <= 0) return;
@@ -1004,7 +1367,7 @@ const App = () => {
 
   useEffect(() => {
     if (currentPage === 'dns' && dnsToolMode === 'manager') {
-      loadDnsAdapters();
+      loadDnsAdapters(false);
     }
   }, [currentPage, dnsToolMode, loadDnsAdapters]);
 
@@ -1014,6 +1377,47 @@ const App = () => {
 
   const usableDns = dnsResults.filter((item) => item.status);
   const blockedDns = dnsResults.filter((item) => !item.status);
+  const dnsTableRows = useMemo(() => {
+    const query = dnsSearch.trim().toLowerCase();
+    let rows = dnsResults.map((item) => {
+      const numericLatency = Number(item.responseTimeMs);
+      return {
+        ...item,
+        latencyMs: Number.isFinite(numericLatency) ? numericLatency : null,
+        statusKey: item.status ? 'usable' : 'blocked',
+      };
+    });
+
+    if (dnsStatusFilter !== 'all') {
+      rows = rows.filter((item) => item.statusKey === dnsStatusFilter);
+    }
+
+    if (query) {
+      rows = rows.filter((item) => String(item.server || '').toLowerCase().includes(query));
+    }
+
+    const [sortBy = 'latency', sortDir = 'asc'] = String(dnsSortKey || 'latency-asc').split('-');
+    rows.sort((a, b) => {
+      if (sortBy === 'server') {
+        return String(a.server || '').localeCompare(String(b.server || ''), undefined, { sensitivity: 'base' });
+      }
+      if (sortBy === 'status') {
+        const orderA = a.statusKey === 'usable' ? 0 : 1;
+        const orderB = b.statusKey === 'usable' ? 0 : 1;
+        return orderA - orderB;
+      }
+      const latencyA = Number.isFinite(a.latencyMs) ? a.latencyMs : Number.POSITIVE_INFINITY;
+      const latencyB = Number.isFinite(b.latencyMs) ? b.latencyMs : Number.POSITIVE_INFINITY;
+      return latencyA - latencyB;
+    });
+
+    if (sortDir === 'desc') {
+      rows.reverse();
+    }
+
+    return rows;
+  }, [dnsResults, dnsSearch, dnsSortKey, dnsStatusFilter]);
+
   const topFastestDns = dnsBenchmarkStats
     .filter((item) => Number.isFinite(item.averageMs))
     .slice(0, 3);
@@ -1082,6 +1486,7 @@ const App = () => {
 
   useEffect(() => {
     if (!scrollRef.current) return undefined;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
 
     const wrapper = scrollRef.current;
     const content = wrapper.querySelector('.lenis-content');
@@ -1091,10 +1496,12 @@ const App = () => {
       wrapper,
       content,
       duration: 1.1,
+      wheelMultiplier: 0.86,
       smoothWheel: true,
       smoothTouch: false,
       easing: (t) => 1 - Math.pow(1 - t, 3),
     });
+    lenisRef.current = lenis;
 
     let rafId = 0;
     const raf = (time) => {
@@ -1106,8 +1513,21 @@ const App = () => {
     return () => {
       cancelAnimationFrame(rafId);
       lenis.destroy();
+      if (lenisRef.current === lenis) {
+        lenisRef.current = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+    if (Boolean(activeDragId)) {
+      lenis.stop();
+    } else {
+      lenis.start();
+    }
+  }, [activeDragId]);
 
   useEffect(() => {
     let unlistenClose;
@@ -1139,12 +1559,11 @@ const App = () => {
   }, [requestCloseFlow]);
 
 
-  // Helper function to generate consistent keys
-  const getHostKey = (host) => {
+  const getHostKey = useCallback((host) => {
     return host.type === 'custom'
       ? `custom-${host.id}`
       : `default-${host.label}-${host.host}`;
-  };
+  }, []);
 
   const handleAddNewHost = () => {
     setEditingHost({ id: 'temp', label: '', host: '' });
@@ -1173,20 +1592,115 @@ const App = () => {
     localStorage.setItem('allHosts', JSON.stringify(updatedHosts));
   };
 
-  const handleDragEnd = (event) => {
+  const updateHostById = useCallback((hostId, updater) => {
+    setAllHosts((prevHosts) => {
+      const nextHosts = prevHosts.map((item) => {
+        if (getHostKey(item) !== hostId) return item;
+        return updater(item);
+      });
+      localStorage.setItem('allHosts', JSON.stringify(nextHosts));
+      return nextHosts;
+    });
+  }, [getHostKey, setAllHosts]);
+
+  const handleToggleHostPin = useCallback((hostId) => {
+    setAllHosts((prevHosts) => {
+      const sourceIndex = prevHosts.findIndex((item) => getHostKey(item) === hostId);
+      if (sourceIndex === -1) return prevHosts;
+      const source = prevHosts[sourceIndex];
+      const nextPinned = !Boolean(source.pinned);
+      const updated = { ...source, pinned: nextPinned };
+      const rest = prevHosts.filter((_, index) => index !== sourceIndex);
+      const nextHosts = nextPinned ? [updated, ...rest] : [...rest.slice(0, sourceIndex), updated, ...rest.slice(sourceIndex)];
+      localStorage.setItem('allHosts', JSON.stringify(nextHosts));
+      return nextHosts;
+    });
+  }, [getHostKey, setAllHosts]);
+
+  const handleToggleHostPause = useCallback((hostId) => {
+    updateHostById(hostId, (item) => ({
+      ...item,
+      paused: !Boolean(item.paused),
+    }));
+  }, [updateHostById]);
+
+  const hostItems = useMemo(() => {
+    return allHosts.map((host) => ({
+      host,
+      id: getHostKey(host),
+    }));
+  }, [allHosts, getHostKey]);
+
+  const setDraggingClass = useCallback((isDragging) => {
+    document.body.classList.toggle('dragging-host-card', isDragging);
+  }, []);
+
+  const clearDragState = useCallback(() => {
+    setActiveDragId(null);
+    lastOverIdRef.current = null;
+    setDraggingClass(false);
+  }, [setDraggingClass]);
+
+  const moveHostByIds = useCallback((activeId, overId) => {
+    setAllHosts((prevHosts) => {
+      const oldIndex = prevHosts.findIndex((host) => getHostKey(host) === activeId);
+      const newIndex = prevHosts.findIndex((host) => getHostKey(host) === overId);
+
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+        return prevHosts;
+      }
+
+      const nextOrder = arrayMove(prevHosts, oldIndex, newIndex);
+      localStorage.setItem('allHosts', JSON.stringify(nextOrder));
+      return nextOrder;
+    });
+  }, [getHostKey, setAllHosts]);
+
+  const handleDragStart = useCallback((event) => {
+    const { active } = event;
+    const activeId = active?.id ?? null;
+    setActiveDragId(activeId);
+    lastOverIdRef.current = activeId;
+    setDraggingClass(Boolean(activeId));
+  }, [setDraggingClass]);
+
+  const handleDragOver = useCallback((event) => {
+    const { over } = event;
+    if (over?.id) {
+      lastOverIdRef.current = over.id;
+    }
+  }, []);
+
+  const handleDragCancel = useCallback(() => {
+    clearDragState();
+  }, [clearDragState]);
+
+  const handleDragEnd = useCallback((event) => {
     const { active, over } = event;
+    const activeId = active?.id;
+    const fallbackOverId = over?.id ?? lastOverIdRef.current;
 
-    if (!over || active.id === over.id) return;
+    if (!activeId || !fallbackOverId || activeId === fallbackOverId) {
+      clearDragState();
+      return;
+    }
 
-    const oldIndex = allHosts.findIndex(host => getHostKey(host) === active.id);
-    const newIndex = allHosts.findIndex(host => getHostKey(host) === over.id);
+    moveHostByIds(activeId, fallbackOverId);
+    clearDragState();
+  }, [clearDragState, moveHostByIds]);
 
-    if (oldIndex === -1 || newIndex === -1) return;
+  const activeDragHost = useMemo(() => {
+    if (!activeDragId) return null;
+    return hostItems.find((item) => item.id === activeDragId)?.host || null;
+  }, [activeDragId, hostItems]);
 
-    const newOrder = arrayMove(allHosts, oldIndex, newIndex);
-    setAllHosts(newOrder);
-    localStorage.setItem('allHosts', JSON.stringify(newOrder));
-  };
+  const isSortingHosts = Boolean(activeDragId);
+
+  useEffect(() => {
+    return () => {
+      setDraggingClass(false);
+    };
+  }, [setDraggingClass]);
 
   const texts = useMemo(() => {
     const en = {
@@ -1218,6 +1732,8 @@ const App = () => {
       settingsAutoLaunchHint: 'Start app when Windows boots',
       settingsPingInterval: 'Ping interval (ms)',
       settingsPingIntervalHint: 'How often pings refresh',
+      settingsOptimization: 'Optimization',
+      settingsOptimizationHint: 'Disable sparkline to reduce CPU usage',
       settingsUpdateTitle: 'Check Update Now',
       settingsUpdateHint: 'Compare your version with GitHub',
       settingsUpdateButton: 'Check',
@@ -1241,6 +1757,24 @@ const App = () => {
       edit: 'Edit',
       save: 'Save',
       cancel: 'Cancel',
+      copy: 'Copy',
+      copied: 'Copied',
+      copyShort: 'CP',
+      copiedShort: 'OK',
+      pin: 'Pin to top',
+      unpin: 'Unpin',
+      pinShort: 'PIN',
+      unpinShort: 'TOP',
+      pause: 'Pause ping',
+      resume: 'Resume ping',
+      pauseShort: 'PAUSE',
+      resumeShort: 'RUN',
+      statusGood: 'Good',
+      statusWarning: 'High',
+      statusStable: 'Stable',
+      statusDown: 'Down',
+      statusPaused: 'Paused',
+      statusUnknown: 'Unknown',
       hostNameShortPlaceholder: 'Host name',
       hostIpShortPlaceholder: 'IP address or domain',
       dnsPlaceholder: 'example.com',
@@ -1270,6 +1804,17 @@ const App = () => {
       dnsBatchFailed: 'Batch check failed',
       dnsResolved: 'Resolved',
       dnsUnresolved: 'Unresolved',
+      dnsSearchPlaceholder: 'Search DNS...',
+      dnsSortLatencyAsc: 'Latency (Low to High)',
+      dnsSortLatencyDesc: 'Latency (High to Low)',
+      dnsSortServerAsc: 'Server (A-Z)',
+      dnsSortServerDesc: 'Server (Z-A)',
+      dnsSortStatus: 'Status',
+      dnsTableServer: 'Server',
+      dnsTableLatency: 'Latency',
+      dnsTableStatus: 'Status',
+      dnsTableActions: 'Actions',
+      dnsTableEmpty: 'No DNS results found',
       dnsManagerTitle: 'System DNS Manager',
       dnsManagerAdapter: 'Network adapter',
       dnsManagerRefresh: 'Refresh',
@@ -1286,15 +1831,25 @@ const App = () => {
       failed: 'failed',
       speedDownload: 'Download',
       speedUpload: 'Upload',
-        speedLatency: 'Latency',
-        speedJitter: 'Jitter',
-        speedStart: 'Start',
-        speedStop: 'Stop',
+      speedLatency: 'Latency',
+      speedJitter: 'Jitter',
+      speedStart: 'Start',
+      speedStop: 'Stop',
+      speedPhaseIdle: 'Ready',
+      speedPhaseDownload: 'Testing Download',
+      speedPhaseUpload: 'Testing Upload',
+      speedPhaseFinal: 'Completed',
       speedProviderTitle: 'Provider',
       speedProviderCloudflare: 'Cloudflare',
       speedProviderHetzner: 'Hetzner',
       speedNote: 'Note: If you use IP-changing tools, enable the Tunnel option in the tool settings to show updates.',
-        dragToReorder: 'Drag to reorder',
+      aboutDevTitle: 'Web Application Developer',
+      aboutDevLine1: 'This web application was designed and developed by',
+      aboutDevLine2: 'For contact and to see other projects, visit the link below:',
+      aboutGithubLink: 'View on GitHub',
+      dragToReorder: 'Drag to reorder',
+      dragPreviewMove: 'Move',
+      reorderHint: 'Reorder mode is on: drag cards to change order and use × to delete.',
       deleteTitle: (label) => `Delete ${label}`,
     };
     const fa = {
@@ -1326,6 +1881,8 @@ const App = () => {
       settingsAutoLaunchHint: '\u0628\u0627 \u0631\u0648\u0634\u0646 \u0634\u062f\u0646 \u0648\u06cc\u0646\u062f\u0648\u0632 \u0627\u062c\u0631\u0627 \u0634\u0648\u062f',
       settingsPingInterval: '\u0628\u0627\u0632\u0647 \u067e\u06cc\u0646\u06af (\u0645\u06cc\u0644\u06cc \u062b\u0627\u0646\u06cc\u0647)',
       settingsPingIntervalHint: '\u0641\u0627\u0635\u0644\u0647 \u0628\u0647 \u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u067e\u06cc\u0646\u06af',
+      settingsOptimization: 'بهینه سازی',
+      settingsOptimizationHint: '\u0628\u0631\u0627\u06cc \u06a9\u0627\u0647\u0634 \u0645\u0635\u0631\u0641 CPU \u0646\u0645\u0648\u062f\u0627\u0631 \u062e\u0637\u06cc \u062e\u0627\u0645\u0648\u0634 \u0645\u06cc\u200c\u0634\u0648\u062f',
       settingsUpdateTitle: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a',
       settingsUpdateHint: '\u0645\u0642\u0627\u06cc\u0633\u0647 \u0648\u0631\u0698\u0646 \u0628\u0627 \u06af\u06cc\u062a \u0647\u0627\u0628',
       settingsUpdateButton: '\u0628\u0631\u0631\u0633\u06cc',
@@ -1349,6 +1906,24 @@ const App = () => {
       edit: '\u0648\u06cc\u0631\u0627\u06cc\u0634',
       save: '\u0630\u062e\u06cc\u0631\u0647',
       cancel: '\u0644\u063a\u0648',
+      copy: '\u06a9\u067e\u06cc',
+      copied: '\u06a9\u067e\u06cc \u0634\u062f',
+      copyShort: 'CP',
+      copiedShort: 'OK',
+      pin: '\u0633\u0646\u062c\u0627\u0642 \u0628\u0647 \u0628\u0627\u0644\u0627',
+      unpin: '\u062d\u0630\u0641 \u0633\u0646\u062c\u0627\u0642',
+      pinShort: 'PIN',
+      unpinShort: 'TOP',
+      pause: '\u062a\u0648\u0642\u0641 \u067e\u06cc\u0646\u06af',
+      resume: '\u0627\u062f\u0627\u0645\u0647 \u067e\u06cc\u0646\u06af',
+      pauseShort: '\u0645\u06a9\u062b',
+      resumeShort: '\u0627\u062c\u0631\u0627',
+      statusGood: '\u0639\u0627\u0644\u06cc',
+      statusWarning: '\u0628\u0627\u0644\u0627',
+      statusStable: '\u067e\u0627\u06cc\u062f\u0627\u0631',
+      statusDown: '\u0642\u0637\u0639',
+      statusPaused: '\u0645\u062a\u0648\u0642\u0641',
+      statusUnknown: '\u0646\u0627\u0645\u0634\u062e\u0635',
       hostNameShortPlaceholder: '\u0646\u0627\u0645 \u0645\u06cc\u0632\u0628\u0627\u0646',
       hostIpShortPlaceholder: '\u0622\u062f\u0631\u0633 IP \u06cc\u0627 \u062f\u0627\u0645\u0646\u0647',
       dnsPlaceholder: 'example.com',
@@ -1378,6 +1953,17 @@ const App = () => {
       dnsBatchFailed: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
       dnsResolved: '\u0642\u0627\u0628\u0644 \u0631\u06cc\u0632\u0627\u0644\u0648',
       dnsUnresolved: '\u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u0631\u06cc\u0632\u0627\u0644\u0648',
+      dnsSearchPlaceholder: '\u062c\u0633\u062a\u062c\u0648\u06cc DNS...',
+      dnsSortLatencyAsc: '\u062a\u0627\u062e\u06cc\u0631 (\u06a9\u0645 \u0628\u0647 \u0632\u06cc\u0627\u062f)',
+      dnsSortLatencyDesc: '\u062a\u0627\u062e\u06cc\u0631 (\u0632\u06cc\u0627\u062f \u0628\u0647 \u06a9\u0645)',
+      dnsSortServerAsc: '\u0633\u0631\u0648\u0631 (A-Z)',
+      dnsSortServerDesc: '\u0633\u0631\u0648\u0631 (Z-A)',
+      dnsSortStatus: '\u0648\u0636\u0639\u06cc\u062a',
+      dnsTableServer: '\u0633\u0631\u0648\u0631',
+      dnsTableLatency: '\u062a\u0627\u062e\u06cc\u0631',
+      dnsTableStatus: '\u0648\u0636\u0639\u06cc\u062a',
+      dnsTableActions: '\u0627\u0628\u0632\u0627\u0631',
+      dnsTableEmpty: '\u0646\u062a\u06cc\u062c\u0647\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f',
       dnsManagerTitle: '\u0645\u062f\u06cc\u0631 \u0633\u06cc\u0633\u062a\u0645 DNS',
       dnsManagerAdapter: '\u06a9\u0627\u0631\u062a \u0634\u0628\u06a9\u0647',
       dnsManagerRefresh: '\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc',
@@ -1398,11 +1984,21 @@ const App = () => {
       speedJitter: '\u0646\u0648\u0633\u0627\u0646',
       speedStart: '\u0634\u0631\u0648\u0639',
       speedStop: '\u062a\u0648\u0642\u0641',
+      speedPhaseIdle: '\u0622\u0645\u0627\u062f\u0647',
+      speedPhaseDownload: '\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a \u062f\u0627\u0646\u0644\u0648\u062f',
+      speedPhaseUpload: '\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a \u0622\u067e\u0644\u0648\u062f',
+      speedPhaseFinal: '\u067e\u0627\u06cc\u0627\u0646 \u062a\u0633\u062a',
       speedProviderTitle: '\u0633\u0631\u0648\u06cc\u0633',
       speedProviderCloudflare: 'Cloudflare',
       speedProviderHetzner: 'Hetzner',
       speedNote: '\u0646\u06a9\u062a\u0647 : \u0627\u06af\u0631 \u0627\u0632 \u0627\u0628\u0632\u0627\u0631 \u0647\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u0622\u06cc\u067e\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0645\u06cc\u06a9\u0646\u06cc\u062f \u0628\u0631\u0627\u06cc \u0646\u0645\u0627\u06cc\u0634 \u062a\u063a\u06cc\u06cc\u0631\u0627\u062a \u06af\u0632\u06cc\u0646\u0647 \u062a\u0648\u0646\u0644 \u0631\u0648 \u062f\u0631 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0627\u0628\u0632\u0627\u0631 \u0631\u0648\u0634\u0646 \u06a9\u0646\u06cc\u062f',
+      aboutDevTitle: '\u062a\u0648\u0633\u0639\u0647\u200c\u062f\u0647\u0646\u062f\u0647 \u0648\u0628 \u0627\u067e\u0644\u06cc\u06a9\u06cc\u0634\u0646',
+      aboutDevLine1: '\u0627\u06cc\u0646 \u0648\u0628 \u0627\u067e\u0644\u06cc\u06a9\u06cc\u0634\u0646 \u062a\u0648\u0633\u0637',
+      aboutDevLine2: '\u0628\u0631\u0627\u06cc \u0627\u0631\u062a\u0628\u0627\u0637 \u0648 \u0645\u0634\u0627\u0647\u062f\u0647 \u067e\u0631\u0648\u0698\u0647\u200c\u0647\u0627\u06cc \u062f\u06cc\u06af\u0631\u060c \u0627\u0632 \u0644\u06cc\u0646\u06a9 \u0632\u06cc\u0631 \u062f\u06cc\u062f\u0646 \u06a9\u0646\u06cc\u062f:',
+      aboutGithubLink: '\u0645\u0634\u0627\u0647\u062f\u0647 \u062f\u0631 GitHub',
       dragToReorder: '\u062c\u0627\u0628\u062c\u0627\u06cc\u06cc \u0628\u0631\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u062a\u0631\u062a\u06cc\u0628',
+      dragPreviewMove: '\u062c\u0627\u0628\u062c\u0627\u06cc\u06cc',
+      reorderHint: '\u062d\u0627\u0644\u062a \u062a\u0631\u062a\u06cc\u0628\u200c\u062f\u0647\u06cc \u0641\u0639\u0627\u0644 \u0627\u0633\u062a: \u06a9\u0627\u0631\u062a\u200c\u0647\u0627 \u0631\u0627 \u0628\u06a9\u0634\u06cc\u062f \u0648 \u0628\u0627 \u00d7 \u062d\u0630\u0641 \u06a9\u0646\u06cc\u062f.',
       deleteTitle: (label) => `\u062d\u0630\u0641 ${label}`,
     };
     return isPersian ? fa : en;
@@ -1418,15 +2014,41 @@ const App = () => {
       error: 'Error',
       noResponse: 'No Response',
       ipcError: 'IPC Error',
+      paused: 'Paused',
     };
     const fa = {
       needAdmin: '\u0646\u06cc\u0627\u0632 \u0628\u0647 \u062f\u0633\u062a\u0631\u0633\u06cc \u0627\u062f\u0645\u06cc\u0646',
       error: '\u062e\u0637\u0627',
       noResponse: '\u0628\u062f\u0648\u0646 \u067e\u0627\u0633\u062e',
       ipcError: '\u062e\u0637\u0627\u06cc IPC',
+      paused: '\u0645\u062a\u0648\u0642\u0641',
     };
     return isPersian ? fa : en;
   }, [isPersian]);
+
+  const dnsSortOptions = useMemo(() => ([
+    { value: 'latency-asc', label: texts.dnsSortLatencyAsc },
+    { value: 'latency-desc', label: texts.dnsSortLatencyDesc },
+    { value: 'server-asc', label: texts.dnsSortServerAsc },
+    { value: 'server-desc', label: texts.dnsSortServerDesc },
+    { value: 'status-asc', label: texts.dnsSortStatus },
+  ]), [texts]);
+
+  const speedPhaseLabel = useMemo(() => {
+    if (speedPhase === 'download') return texts.speedPhaseDownload;
+    if (speedPhase === 'upload') return texts.speedPhaseUpload;
+    if (speedPhase === 'final') return texts.speedPhaseFinal;
+    return texts.speedPhaseIdle;
+  }, [speedPhase, texts]);
+
+  const pageTitle = useMemo(() => {
+    if (currentPage === 'dns') return 'DNS Checker';
+    if (currentPage === 'speed') return 'Speed Test';
+    if (currentPage === 'log') return 'Log';
+    if (currentPage === 'about') return 'About';
+    if (currentPage === 'settings') return 'Settings';
+    return 'PulseNet';
+  }, [currentPage]);
 
   const filteredLogs = useMemo(() => {
     if (logFilter === 'all') return logEntries;
@@ -1493,6 +2115,11 @@ const App = () => {
     );
   };
 
+  const handleOpenDeveloperGithub = useCallback((event) => {
+    event.preventDefault();
+    open('https://github.com/SM8KE1');
+  }, []);
+
 
 
 
@@ -1500,28 +2127,38 @@ const App = () => {
 
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isSortingHosts ? 'sorting-active' : ''}`}>
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
-          <div className="sidebar-team">
+          <button
+            type="button"
+            className="sidebar-team sidebar-team-clickable"
+            onClick={() => setCurrentPage('about')}
+            aria-label="Open About"
+          >
             <div className="sidebar-team-logo">
               <img src={iconIco} alt="PulseNet" className="sidebar-team-icon" />
             </div>
             <div className="sidebar-team-info">
               <div className="sidebar-team-name">PulseNet</div>
-            <div className="sidebar-team-plan">
-              {currentPage === 'ping'
-                ? texts.monitoring
-                : currentPage === 'dns'
-                  ? 'Checking DNS'
-                  : currentPage === 'speed'
-                    ? 'Speed Test'
-                    : currentPage === 'log'
-                      ? 'Log'
-                      : 'Settings'}
+              <div className="sidebar-team-plan">
+                {currentPage === 'ping'
+                  ? texts.monitoring
+                  : currentPage === 'dns'
+                    ? 'Checking DNS'
+                    : currentPage === 'speed'
+                      ? 'Speed Test'
+                      : currentPage === 'log'
+                        ? 'Log'
+                        : currentPage === 'about'
+                          ? 'About'
+                          : 'Settings'}
+              </div>
             </div>
-            </div>
-          </div>
+            <span className="sidebar-team-about-icon" aria-hidden="true">
+              <img src={aboutIcon} alt="" className="sidebar-team-about-icon-img" />
+            </span>
+          </button>
           <button className="sidebar-collapse" onClick={toggleSidebarCollapse} aria-label="Toggle sidebar">
             <span className="collapse-line"></span>
             <span className="collapse-line"></span>
@@ -1534,6 +2171,8 @@ const App = () => {
               <button
                 className={`sidebar-item ${currentPage === 'ping' ? 'active' : ''}`}
                 onClick={() => setCurrentPage('ping')}
+                data-tooltip={texts.ping}
+                aria-label={texts.ping}
               >
                 <span className="sidebar-item-icon" aria-hidden="true">
                   <img src={pingIcon} alt="" className="sidebar-item-icon-img" />
@@ -1543,6 +2182,8 @@ const App = () => {
               <button
                 className={`sidebar-item ${currentPage === 'dns' ? 'active' : ''}`}
                 onClick={() => setCurrentPage('dns')}
+                data-tooltip={texts.dnsChecker}
+                aria-label={texts.dnsChecker}
               >
                 <span className="sidebar-item-icon" aria-hidden="true">
                   <img src={dnsIcon} alt="" className="sidebar-item-icon-img" />
@@ -1552,6 +2193,8 @@ const App = () => {
               <button
                 className={`sidebar-item ${currentPage === 'speed' ? 'active' : ''}`}
                 onClick={() => setCurrentPage('speed')}
+                data-tooltip={texts.speedTest}
+                aria-label={texts.speedTest}
               >
                 <span className="sidebar-item-icon" aria-hidden="true">
                   <img src={speedIcon} alt="" className="sidebar-item-icon-img" />
@@ -1561,6 +2204,8 @@ const App = () => {
               <button
                 className={`sidebar-item ${currentPage === 'log' ? 'active' : ''}`}
                 onClick={() => setCurrentPage('log')}
+                data-tooltip={texts.alerts}
+                aria-label={texts.alerts}
               >
                 <span className="sidebar-item-icon" aria-hidden="true">
                   <img src={logIcon} alt="" className="sidebar-item-icon-img" />
@@ -1570,6 +2215,8 @@ const App = () => {
               <button
                 className={`sidebar-item ${currentPage === 'settings' ? 'active' : ''}`}
                 onClick={() => setCurrentPage('settings')}
+                data-tooltip={texts.settings}
+                aria-label={texts.settings}
               >
                 <span className="sidebar-item-icon" aria-hidden="true">
                   <img src={settingIcon} alt="" className="sidebar-item-icon-img" />
@@ -1644,18 +2291,9 @@ const App = () => {
               <TranslateToggle isActive={isPersian} onToggle={toggleLocale} />
             </div>
           </div>
-          <h1>
-            {currentPage === 'ping'
-              ? 'PulseNet'
-              : currentPage === 'dns'
-                ? 'DNS Checker'
-                : currentPage === 'speed'
-                  ? 'Speed Test'
-                  : currentPage === 'log'
-                    ? 'Log'
-                    : 'Settings'}
-          </h1>
+          <h1>{pageTitle}</h1>
 
+          <div key={`page-${currentPage}`} className="page-transition">
           {currentPage === 'ping' ? (
             <div id="ping-results">
             <div className="add-host-container">
@@ -1671,6 +2309,7 @@ const App = () => {
                 {texts.edit}
               </button>
             </div>
+            {isEditMode && <div className="reorder-hint">{texts.reorderHint}</div>}
 
             {/* All Hosts with dnd-kit drag and drop */}
             {/* Editing Host - outside of SortableContext */}
@@ -1686,6 +2325,7 @@ const App = () => {
                 texts={texts}
                 statusTexts={statusTexts}
                 pingIntervalMs={pingIntervalMs}
+                optimizationEnabled={optimizationEnabled}
                 onLog={addLogEntry}
                 pingAlertThresholdMs={pingAlertThresholdMs}
               />
@@ -1695,29 +2335,55 @@ const App = () => {
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
             >
               <SortableContext
-                items={allHosts.map(getHostKey)}
+                items={hostItems.map((item) => item.id)}
                 strategy={verticalListSortingStrategy}
               >
-                {allHosts.map((host) => (
+                {hostItems.map(({ host, id }) => (
                 <SortableItem
-                  key={getHostKey(host)}
-                  id={getHostKey(host)}
+                  key={id}
+                  id={id}
                   label={host.label}
                   host={host.host}
                   showDelete={isEditMode}
                   isEditMode={isEditMode}
+                  isSorting={isSortingHosts}
+                  isDragSource={activeDragId === id}
+                  isPinned={Boolean(host.pinned)}
+                  isPaused={Boolean(host.paused)}
+                  isCopied={copyFeedbackKey === `ping-${id}`}
+                  onTogglePin={handleToggleHostPin}
+                  onTogglePause={handleToggleHostPause}
+                  onCopy={(hostId, value) => handleCopyText(value, `ping-${hostId}`)}
                   onDelete={() => handleDeleteHost(host)}
                   texts={texts}
                   statusTexts={statusTexts}
                   pingIntervalMs={pingIntervalMs}
+                  optimizationEnabled={optimizationEnabled}
                   onLog={addLogEntry}
                   pingAlertThresholdMs={pingAlertThresholdMs}
                 />
               ))}
               </SortableContext>
+              {typeof document !== 'undefined'
+                ? createPortal(
+                    <DragOverlay dropAnimation={DRAG_OVERLAY_DROP_ANIMATION}>
+                      {activeDragHost ? (
+                        <DragPreviewCard
+                          label={activeDragHost.label}
+                          host={activeDragHost.host}
+                          moveText={texts.dragPreviewMove}
+                        />
+                      ) : null}
+                    </DragOverlay>,
+                    document.body
+                  )
+                : null}
             </DndContext>
           </div>
         ) : currentPage === 'dns' ? (
@@ -1831,34 +2497,91 @@ const App = () => {
                   </div>
                 )}
                 {(dnsResults.length > 0 || dnsLoading) && (
-                  <>
+                  <div className="dns-table-wrap">
                     <div className="dns-summary">
                       <span className="dns-summary-good">{texts.usable} ({usableDns.length})</span>
                       <span className="dns-summary-bad">{texts.blocked} ({blockedDns.length})</span>
                     </div>
-                    <div className="dns-results">
-                      <div className="dns-column">
-                        <div className="dns-column-title good">{texts.usable}</div>
-                        {usableDns.map((item) => (
-                          <div key={`usable-${item.server}`} className="dns-card good">
-                            <div className="dns-card-main">{item.server}</div>
-                            <div className="dns-card-meta">{item.responseTimeMs}ms</div>
-                          </div>
-                        ))}
+                    <div className="dns-table-toolbar">
+                      <input
+                        className="dns-table-search"
+                        value={dnsSearch}
+                        onChange={(event) => setDnsSearch(event.target.value)}
+                        placeholder={texts.dnsSearchPlaceholder}
+                        disabled={dnsLoading}
+                      />
+                      <div className="dns-table-filters">
+                        <button
+                          type="button"
+                          className={`dns-table-filter ${dnsStatusFilter === 'all' ? 'active' : ''}`}
+                          onClick={() => setDnsStatusFilter('all')}
+                        >
+                          {texts.logAll}
+                        </button>
+                        <button
+                          type="button"
+                          className={`dns-table-filter ${dnsStatusFilter === 'usable' ? 'active' : ''}`}
+                          onClick={() => setDnsStatusFilter('usable')}
+                        >
+                          {texts.usable}
+                        </button>
+                        <button
+                          type="button"
+                          className={`dns-table-filter ${dnsStatusFilter === 'blocked' ? 'active' : ''}`}
+                          onClick={() => setDnsStatusFilter('blocked')}
+                        >
+                          {texts.blocked}
+                        </button>
                       </div>
-                      <div className="dns-column">
-                        <div className="dns-column-title bad">{texts.blocked}</div>
-                        {blockedDns.map((item) => (
-                          <div key={`blocked-${item.server}`} className="dns-card bad">
-                            <div className="dns-card-main">{item.server}</div>
-                            <div className="dns-card-meta">
-                              {item.error ? item.error.toString() : texts.failed}
+                      <AppDropdown
+                        className="dns-table-sort"
+                        value={dnsSortKey}
+                        onChange={setDnsSortKey}
+                        options={dnsSortOptions}
+                      />
+                    </div>
+                    <div className="dns-table">
+                      <div className="dns-table-head">
+                        <span>{texts.dnsTableServer}</span>
+                        <span>{texts.dnsTableLatency}</span>
+                        <span>{texts.dnsTableStatus}</span>
+                        <span>{texts.dnsTableActions}</span>
+                      </div>
+                      <div className="dns-table-body">
+                        {dnsLoading ? (
+                          Array.from({ length: 6 }).map((_, index) => (
+                            <div key={`dns-skeleton-${index}`} className="dns-table-row skeleton">
+                              <span className="skeleton-line"></span>
+                              <span className="skeleton-line short"></span>
+                              <span className="skeleton-line short"></span>
+                              <span className="skeleton-line short"></span>
                             </div>
-                          </div>
-                        ))}
+                          ))
+                        ) : dnsTableRows.length === 0 ? (
+                          <div className="dns-table-empty">{texts.dnsTableEmpty}</div>
+                        ) : (
+                          dnsTableRows.map((item, index) => (
+                            <div key={`dns-row-${item.server}-${item.status ? 'ok' : 'blocked'}-${Math.round(item.latencyMs ?? -1)}-${index}`} className="dns-table-row">
+                              <span className="dns-row-server">{item.server}</span>
+                              <span className="dns-row-latency">
+                                {Number.isFinite(item.latencyMs) ? `${Math.round(item.latencyMs)}ms` : '--'}
+                              </span>
+                              <span className={`status-pill ${item.status ? 'good' : 'bad'}`}>
+                                {item.status ? texts.usable : texts.blocked}
+                              </span>
+                              <button
+                                type="button"
+                                className={`dns-copy-btn ${copyFeedbackKey === `dns-${item.server}` ? 'active' : ''}`}
+                                onClick={() => handleCopyText(item.server, `dns-${item.server}`)}
+                              >
+                                {copyFeedbackKey === `dns-${item.server}` ? texts.copied : texts.copy}
+                              </button>
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
-                  </>
+                  </div>
                 )}
                 <div className="dns-batch">
                   <div className="dns-batch-title">{texts.dnsBatchTitle}</div>
@@ -1902,11 +2625,10 @@ const App = () => {
                 <div className="dns-manager-row">
                   <label>{texts.dnsManagerAdapter}</label>
                   <div className="dns-manager-controls">
-                    <select
+                    <AppDropdown
                       className="dns-manager-select"
                       value={dnsSelectedAdapter}
-                      onChange={(event) => {
-                        const selected = event.target.value;
+                      onChange={(selected) => {
                         setDnsSelectedAdapter(selected);
                         const adapter = dnsAdapters.find((item) => item.name === selected);
                         if (adapter) {
@@ -1915,20 +2637,19 @@ const App = () => {
                         }
                       }}
                       disabled={dnsManagerLoading || dnsAdapters.length === 0}
-                    >
-                      {dnsAdapters.length === 0 ? (
-                        <option value="">{texts.dnsManagerNoAdapters}</option>
-                      ) : (
-                        dnsAdapters.map((adapter) => (
-                          <option key={`adapter-${adapter.name}`} value={adapter.name}>
-                            {adapter.name}
-                          </option>
-                        ))
-                      )}
-                    </select>
+                      options={
+                        dnsAdapters.length === 0
+                          ? [{ value: '', label: texts.dnsManagerNoAdapters }]
+                          : dnsAdapters.map((adapter) => ({
+                            value: adapter.name,
+                            label: adapter.name,
+                          }))
+                      }
+                      placeholder={texts.dnsManagerNoAdapters}
+                    />
                     <button
-                      className="dns-button secondary"
-                      onClick={loadDnsAdapters}
+                      className="dns-button secondary dns-manager-refresh"
+                      onClick={() => loadDnsAdapters(true)}
                       disabled={dnsManagerLoading}
                     >
                       {texts.dnsManagerRefresh}
@@ -1962,7 +2683,7 @@ const App = () => {
                     {texts.dnsManagerApply}
                   </button>
                   <button
-                    className="dns-button secondary"
+                    className="dns-button secondary dns-manager-reset"
                     onClick={handleResetSystemDns}
                     disabled={dnsManagerLoading || !dnsSelectedAdapter}
                   >
@@ -1994,6 +2715,7 @@ const App = () => {
                 </button>
               </div>
             </div>
+            <div className={`speed-phase ${speedPhase}`}>{speedPhaseLabel}</div>
             {(!speedStarted || speedLoading) ? (
               <div className="speed-start">
                 <button
@@ -2138,6 +2860,26 @@ const App = () => {
               </div>
             )}
           </div>
+        ) : currentPage === 'about' ? (
+          <div className="about-page">
+            <div className={`developer-content ${isPersian ? 'rtl' : 'ltr'}`}>
+              <h4>{texts.aboutDevTitle}</h4>
+              <p>{texts.aboutDevLine1} <strong>Arash Bayat</strong>.</p>
+              <p>{texts.aboutDevLine2}</p>
+              <a
+                href="https://github.com/SM8KE1"
+                target="_blank"
+                rel="noreferrer"
+                className="github-link"
+                onClick={handleOpenDeveloperGithub}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                </svg>
+                {texts.aboutGithubLink}
+              </a>
+            </div>
+          </div>
         ) : (
           <div className="settings-page">
             <div className="settings-card">
@@ -2186,15 +2928,30 @@ const App = () => {
                   <div className="settings-name">{texts.closeActionTitle}</div>
                   <div className="settings-hint">{texts.closeActionHint}</div>
                 </div>
-                <select
+                <AppDropdown
                   className="settings-select"
                   value={closeAction}
-                  onChange={(event) => setCloseAction(event.target.value)}
-                >
-                  <option value="hide">{texts.closeActionHide}</option>
-                  <option value="exit">{texts.closeActionExit}</option>
-                  <option value="ask">{texts.closeActionAsk}</option>
-                </select>
+                  onChange={setCloseAction}
+                  options={[
+                    { value: 'hide', label: texts.closeActionHide },
+                    { value: 'exit', label: texts.closeActionExit },
+                    { value: 'ask', label: texts.closeActionAsk },
+                  ]}
+                />
+              </div>
+              <div className="settings-item">
+                <div className="settings-label">
+                  <div className="settings-name">{texts.settingsOptimization}</div>
+                  <div className="settings-hint">{texts.settingsOptimizationHint}</div>
+                </div>
+                <label className="settings-switch">
+                  <input
+                    type="checkbox"
+                    checked={optimizationEnabled}
+                    onChange={handleToggleOptimization}
+                  />
+                  <span className="settings-slider"></span>
+                </label>
               </div>
               <div className="settings-item">
                 <div className="settings-label">
@@ -2236,6 +2993,7 @@ const App = () => {
             )}
           </div>
           )}
+          </div>
         </div>
       </div>
       {closeModalOpen && (
@@ -2282,3 +3040,4 @@ const App = () => {
 };
 
 export default App;
+
