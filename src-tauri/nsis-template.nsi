@@ -147,11 +147,15 @@ Function PageReinstall
     StrCmp $1 "" wix_hkcu_64
     IntOp $0 $0 + 1
     ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
-    StrCmp "$R0" "${PRODUCTNAME}" 0 wix_loop_hklm_64
+    ${StrCase} $R3 "$R0" "L"
+    ${StrCase} $R4 "${PRODUCTNAME}" "L"
+    ${StrLoc} $R5 $R3 $R4 ">"
+    StrCmp "$R5" "" wix_loop_hklm_64
     ReadRegDWORD $R2 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
     StrCmp $R2 1 0 wix_loop_hklm_64
     StrCpy $R7 "wix_hklm"
     StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
+    StrCpy $R8 "$1"
     Goto compare_version
 
   wix_hkcu_64:
@@ -161,11 +165,15 @@ Function PageReinstall
     StrCmp $1 "" wix_scan_32bit_view
     IntOp $0 $0 + 1
     ReadRegStr $R0 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
-    StrCmp "$R0" "${PRODUCTNAME}" 0 wix_loop_hkcu_64
+    ${StrCase} $R3 "$R0" "L"
+    ${StrCase} $R4 "${PRODUCTNAME}" "L"
+    ${StrLoc} $R5 $R3 $R4 ">"
+    StrCmp "$R5" "" wix_loop_hkcu_64
     ReadRegDWORD $R2 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
     StrCmp $R2 1 0 wix_loop_hkcu_64
     StrCpy $R7 "wix_hkcu"
     StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
+    StrCpy $R8 "$1"
     Goto compare_version
 
   wix_scan_32bit_view:
@@ -177,11 +185,15 @@ Function PageReinstall
       StrCmp $1 "" wix_hkcu_32
       IntOp $0 $0 + 1
       ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
-      StrCmp "$R0" "${PRODUCTNAME}" 0 wix_loop_hklm_32
+      ${StrCase} $R3 "$R0" "L"
+      ${StrCase} $R4 "${PRODUCTNAME}" "L"
+      ${StrLoc} $R5 $R3 $R4 ">"
+      StrCmp "$R5" "" wix_loop_hklm_32
       ReadRegDWORD $R2 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
       StrCmp $R2 1 0 wix_loop_hklm_32
       StrCpy $R7 "wix_hklm"
       StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
+      StrCpy $R8 "$1"
       ${If} ${RunningX64}
         !if "${ARCH}" == "x64"
           SetRegView 64
@@ -200,11 +212,15 @@ Function PageReinstall
       StrCmp $1 "" wix_done
       IntOp $0 $0 + 1
       ReadRegStr $R0 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
-      StrCmp "$R0" "${PRODUCTNAME}" 0 wix_loop_hkcu_32
+      ${StrCase} $R3 "$R0" "L"
+      ${StrCase} $R4 "${PRODUCTNAME}" "L"
+      ${StrLoc} $R5 $R3 $R4 ">"
+      StrCmp "$R5" "" wix_loop_hkcu_32
       ReadRegDWORD $R2 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
       StrCmp $R2 1 0 wix_loop_hkcu_32
       StrCpy $R7 "wix_hkcu"
       StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
+      StrCpy $R8 "$1"
       ${If} ${RunningX64}
         !if "${ARCH}" == "x64"
           SetRegView 64
@@ -349,11 +365,21 @@ Function PageLeaveReinstall
     ${EndIf}
 
     ${If} $R7 == "wix_hklm"
-      ReadRegStr $R1 HKLM "$R6" "UninstallString"
-      ExecWait '$R1' $0
+      ; Uninstall MSI directly by product code to avoid /I maintenance mode strings.
+      ${If} $R8 != ""
+        ExecWait 'msiexec.exe /x $R8 /passive /norestart' $0
+      ${Else}
+        ReadRegStr $R1 HKLM "$R6" "UninstallString"
+        ExecWait '$R1' $0
+      ${EndIf}
     ${ElseIf} $R7 == "wix_hkcu"
-      ReadRegStr $R1 HKCU "$R6" "UninstallString"
-      ExecWait '$R1' $0
+      ; Uninstall MSI directly by product code to avoid /I maintenance mode strings.
+      ${If} $R8 != ""
+        ExecWait 'msiexec.exe /x $R8 /passive /norestart' $0
+      ${Else}
+        ReadRegStr $R1 HKCU "$R6" "UninstallString"
+        ExecWait '$R1' $0
+      ${EndIf}
     ${Else}
       ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
       ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
@@ -365,6 +391,8 @@ Function PageLeaveReinstall
     ${IfThen} ${Errors} ${|} StrCpy $0 2 ${|} ; ExecWait failed, set fake exit code
 
     ${If} $0 <> 0
+    ${AndIf} $0 <> 3010
+    ${AndIf} $0 <> 1641
     ${OrIf} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
       ${If} $0 = 1 ; User aborted uninstaller?
         StrCmp $R5 "2" 0 +2 ; Is the existing install the same version?
@@ -374,10 +402,15 @@ Function PageLeaveReinstall
       MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
       Abort
     ${Else}
-      StrCpy $0 $R1 1
-      ${IfThen} $0 == '"' ${|} StrCpy $R1 $R1 -1 1 ${|} ; Strip quotes from UninstallString
-      Delete $R1
-      RMDir $INSTDIR
+      ${If} $R7 == "wix_hklm"
+      ${OrIf} $R7 == "wix_hkcu"
+        ; MSI uninstall handled by Windows Installer service.
+      ${Else}
+        StrCpy $0 $R1 1
+        ${IfThen} $0 == '"' ${|} StrCpy $R1 $R1 -1 1 ${|} ; Strip quotes from UninstallString
+        Delete $R1
+        RMDir $INSTDIR
+      ${EndIf}
     ${EndIf}
   reinst_done:
 FunctionEnd

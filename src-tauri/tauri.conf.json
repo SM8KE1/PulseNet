@@ -39,6 +39,11 @@
       "windows": {
         "nsis": {
           "template": "nsis-template.nsi"
+        },
+        "wix": {
+          "fragmentPaths": [
+            "wix/legacy-nsis-cleanup.wxs"
+          ]
         }
       },
       "icon": [

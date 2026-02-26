@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <Property Id="OLD_NSIS_UNINSTALL_HKLM">
+      <RegistrySearch
+        Id="OldNsisUninstallHKLM"
+        Root="HKLM"
+        Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\PulseNet"
+        Name="UninstallString"
+        Type="raw"
+      />
+    </Property>
+
+    <Property Id="OLD_NSIS_UNINSTALL_HKCU">
+      <RegistrySearch
+        Id="OldNsisUninstallHKCU"
+        Root="HKCU"
+        Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\PulseNet"
+        Name="UninstallString"
+        Type="raw"
+      />
+    </Property>
+
+    <CustomAction
+      Id="UninstallOldNsisHKLM"
+      Directory="TARGETDIR"
+      ExeCommand='[OLD_NSIS_UNINSTALL_HKLM] /S'
+      Execute="deferred"
+      Return="ignore"
+      Impersonate="no"
+    />
+
+    <CustomAction
+      Id="UninstallOldNsisHKCU"
+      Directory="TARGETDIR"
+      ExeCommand='[OLD_NSIS_UNINSTALL_HKCU] /S'
+      Execute="deferred"
+      Return="ignore"
+      Impersonate="yes"
+    />
+
+    <InstallExecuteSequence>
+      <Custom Action="UninstallOldNsisHKLM" Before="InstallInitialize">
+        NOT Installed AND NOT REMOVE AND OLD_NSIS_UNINSTALL_HKLM
+      </Custom>
+      <Custom Action="UninstallOldNsisHKCU" Before="InstallInitialize">
+        NOT Installed AND NOT REMOVE AND OLD_NSIS_UNINSTALL_HKCU
+      </Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>
