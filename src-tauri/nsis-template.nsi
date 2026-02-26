@@ -133,33 +133,99 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 Var ReinstallPageCheck
 Page custom PageReinstall PageLeaveReinstall
 Function PageReinstall
-  ; Uninstall previous WiX installation if exists.
+  ; Detect previous WiX/MSI installation if it exists.
   ;
-  ; A WiX installer stores the isntallation info in registry
-  ; using a UUID and so we have to loop through all keys under
-  ; `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`
-  ; and check if `DisplayName` and `Publisher` keys match ${PRODUCTNAME} and ${MANUFACTURER}
+  ; We scan both HKLM and HKCU uninstall keys, and on x64 we also scan
+  ; the 32-bit registry view, because previous MSI installs may live in
+  ; a different registry hive/view than the current NSIS installer context.
   ;
-  ; This has a potentional issue that there maybe another installation that matches
-  ; our ${PRODUCTNAME} and ${MANUFACTURER} but wasn't installed by our WiX installer,
-  ; however, this should be fine since the user will have to confirm the uninstallation
-  ; and they can chose to abort it if doesn't make sense.
+  ; We only consider entries with DisplayName == ${PRODUCTNAME} and
+  ; WindowsInstaller == 1 to avoid matching non-MSI entries.
   StrCpy $0 0
-  wix_loop:
+  wix_loop_hklm_64:
     EnumRegKey $1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
-    StrCmp $1 "" wix_done ; Exit loop if there is no more keys to loop on
+    StrCmp $1 "" wix_hkcu_64
     IntOp $0 $0 + 1
     ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
-    ReadRegStr $R1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "Publisher"
-    StrCmp "$R0$R1" "${PRODUCTNAME}${MANUFACTURER}" 0 wix_loop
-    ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "UninstallString"
-    ${StrCase} $R1 $R0 "L"
-    ${StrLoc} $R0 $R1 "msiexec" ">"
-    StrCmp $R0 0 0 wix_done
-    StrCpy $R7 "wix"
+    StrCmp "$R0" "${PRODUCTNAME}" 0 wix_loop_hklm_64
+    ReadRegDWORD $R2 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
+    StrCmp $R2 1 0 wix_loop_hklm_64
+    StrCpy $R7 "wix_hklm"
     StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
     Goto compare_version
+
+  wix_hkcu_64:
+    StrCpy $0 0
+  wix_loop_hkcu_64:
+    EnumRegKey $1 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
+    StrCmp $1 "" wix_scan_32bit_view
+    IntOp $0 $0 + 1
+    ReadRegStr $R0 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
+    StrCmp "$R0" "${PRODUCTNAME}" 0 wix_loop_hkcu_64
+    ReadRegDWORD $R2 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
+    StrCmp $R2 1 0 wix_loop_hkcu_64
+    StrCpy $R7 "wix_hkcu"
+    StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
+    Goto compare_version
+
+  wix_scan_32bit_view:
+  ${If} ${RunningX64}
+    SetRegView 32
+    StrCpy $0 0
+    wix_loop_hklm_32:
+      EnumRegKey $1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
+      StrCmp $1 "" wix_hkcu_32
+      IntOp $0 $0 + 1
+      ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
+      StrCmp "$R0" "${PRODUCTNAME}" 0 wix_loop_hklm_32
+      ReadRegDWORD $R2 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
+      StrCmp $R2 1 0 wix_loop_hklm_32
+      StrCpy $R7 "wix_hklm"
+      StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
+      ${If} ${RunningX64}
+        !if "${ARCH}" == "x64"
+          SetRegView 64
+        !else if "${ARCH}" == "arm64"
+          SetRegView 64
+        !else
+          SetRegView 32
+        !endif
+      ${EndIf}
+      Goto compare_version
+
+    wix_hkcu_32:
+      StrCpy $0 0
+    wix_loop_hkcu_32:
+      EnumRegKey $1 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
+      StrCmp $1 "" wix_done
+      IntOp $0 $0 + 1
+      ReadRegStr $R0 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
+      StrCmp "$R0" "${PRODUCTNAME}" 0 wix_loop_hkcu_32
+      ReadRegDWORD $R2 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
+      StrCmp $R2 1 0 wix_loop_hkcu_32
+      StrCpy $R7 "wix_hkcu"
+      StrCpy $R6 "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1"
+      ${If} ${RunningX64}
+        !if "${ARCH}" == "x64"
+          SetRegView 64
+        !else if "${ARCH}" == "arm64"
+          SetRegView 64
+        !else
+          SetRegView 32
+        !endif
+      ${EndIf}
+      Goto compare_version
+  ${EndIf}
   wix_done:
+  ${If} ${RunningX64}
+    !if "${ARCH}" == "x64"
+      SetRegView 64
+    !else if "${ARCH}" == "arm64"
+      SetRegView 64
+    !else
+      SetRegView 32
+    !endif
+  ${EndIf}
 
   ; Check if there is an existing installation, if not, abort the reinstall page
   ReadRegStr $R0 SHCTX "${UNINSTKEY}" ""
@@ -170,8 +236,10 @@ Function PageReinstall
   ; and modify the messages presented to the user accordingly
   compare_version:
   StrCpy $R4 "$(older)"
-  ${If} $R7 == "wix"
+  ${If} $R7 == "wix_hklm"
     ReadRegStr $R0 HKLM "$R6" "DisplayVersion"
+  ${ElseIf} $R7 == "wix_hkcu"
+    ReadRegStr $R0 HKCU "$R6" "DisplayVersion"
   ${Else}
     ReadRegStr $R0 SHCTX "${UNINSTKEY}" "DisplayVersion"
   ${EndIf}
@@ -280,8 +348,11 @@ Function PageLeaveReinstall
       Sleep 500
     ${EndIf}
 
-    ${If} $R7 == "wix"
+    ${If} $R7 == "wix_hklm"
       ReadRegStr $R1 HKLM "$R6" "UninstallString"
+      ExecWait '$R1' $0
+    ${ElseIf} $R7 == "wix_hkcu"
+      ReadRegStr $R1 HKCU "$R6" "UninstallString"
       ExecWait '$R1' $0
     ${Else}
       ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""

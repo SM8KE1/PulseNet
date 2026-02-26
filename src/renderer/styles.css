@@ -1165,9 +1165,142 @@ h1 {
 .add-host-container {
     position: absolute;
     top: -60px;
+    left: 7px;
     right: 7px;
     z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
     -webkit-app-region: no-drag;
+}
+
+.public-ip-widget {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 42px;
+    max-width: 440px;
+    min-width: 0;
+}
+
+.public-ip-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.public-ip-value {
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    direction: ltr;
+}
+
+.public-ip-flag {
+    width: 18px;
+    height: 13px;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-mid) 68%, transparent 32%);
+    flex-shrink: 0;
+}
+
+.public-ip-flag-img {
+    width: 18px;
+    height: 13px;
+    border-radius: 3px;
+    object-fit: cover;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-mid) 68%, transparent 32%);
+    user-select: none;
+    -webkit-user-drag: none;
+    flex-shrink: 0;
+}
+
+.public-ip-flag-fallback {
+    color: var(--text-subtle);
+    font-size: 12px;
+    font-weight: 700;
+    min-width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.public-ip-action {
+    border: none;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 0;
+    cursor: pointer;
+    transition: background 0.22s ease, color 0.22s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.public-ip-action:hover {
+    background: var(--bg-soft-hover);
+    color: var(--text-primary);
+}
+
+.public-ip-action:disabled {
+    opacity: 0.68;
+    cursor: default;
+}
+
+.public-ip-action-visibility {
+    color: var(--text-primary);
+}
+
+.public-ip-action-visibility:hover {
+    color: var(--text-primary);
+}
+
+.public-ip-visibility-icon {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+.refresh-lottie {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.refresh-lottie-player {
+    width: 18px;
+    height: 18px;
+}
+
+.refresh-lottie-player svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.refresh-lottie-player svg * {
+    fill: currentColor !important;
+    stroke: currentColor !important;
+}
+
+.add-host-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
 }
 
 .reorder-hint {
@@ -1219,7 +1352,7 @@ h1 {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    margin-left: 10px;
+    margin-left: 0;
 }
 
 .edit-host-button:hover {
@@ -1923,6 +2056,7 @@ h1 {
     font-size: 12px;
     color: var(--text-muted);
     font-weight: 600;
+    text-align: center;
 }
 .speed-provider-tabs {
     display: inline-flex;
@@ -3268,6 +3402,12 @@ h1 {
         justify-content: center;
         flex-wrap: wrap;
         gap: 10px;
+    }
+    .public-ip-widget {
+        max-width: 100%;
+    }
+    .add-host-actions {
+        margin-left: 0;
     }
     .reorder-hint {
         margin-left: auto;

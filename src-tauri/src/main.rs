@@ -129,6 +129,13 @@ struct SpeedTestResult {
 }
 
 #[derive(Serialize)]
+struct PublicNetworkInfo {
+  ip: String,
+  country: String,
+  error: Option<String>,
+}
+
+#[derive(Serialize)]
 struct UpdateCheckResult {
   #[serde(rename = "currentVersion")]
   current_version: String,
@@ -818,6 +825,54 @@ fn extract_ip_country_from_ipwhois(body: &str) -> (String, String) {
 }
 
 #[tauri::command]
+async fn get_public_network_info() -> PublicNetworkInfo {
+  let client = HttpClient::new();
+  let mut ip = "N/A".to_string();
+  let mut country = "N/A".to_string();
+
+  if let Ok(resp) = client
+    .get(format!("{}/cdn-cgi/trace", CLOUDFLARE_BASE))
+    .header("User-Agent", "PulseNet")
+    .send()
+    .await
+  {
+    let body = resp.text().await.unwrap_or_default();
+    if let Some(value) = extract_ip_from_trace(&body) {
+      ip = value;
+    }
+    if let Some(value) = extract_country_from_trace(&body) {
+      country = value;
+    }
+  }
+
+  if ip == "N/A" || country == "N/A" {
+    if let Ok(resp) = client
+      .get(IPWHOIS_URL)
+      .header("User-Agent", "PulseNet")
+      .send()
+      .await
+    {
+      let body = resp.text().await.unwrap_or_default();
+      let (fallback_ip, fallback_country) = extract_ip_country_from_ipwhois(&body);
+      if ip == "N/A" {
+        ip = fallback_ip;
+      }
+      if country == "N/A" {
+        country = fallback_country;
+      }
+    }
+  }
+
+  let error = if ip == "N/A" && country == "N/A" {
+    Some("Failed to fetch network info".to_string())
+  } else {
+    None
+  };
+
+  PublicNetworkInfo { ip, country, error }
+}
+
+#[tauri::command]
 async fn speedtest_cloudflare() -> SpeedTestResult {
   let client = HttpClient::new();
   let (latency, jitter) = measure_ping(&client, &format!("{}/__ping", CLOUDFLARE_BASE)).await;
@@ -1050,6 +1105,7 @@ fn main() {
       ping_host,
       get_app_version,
       get_username,
+      get_public_network_info,
       get_auto_launch,
       set_auto_launch,
       get_close_action,

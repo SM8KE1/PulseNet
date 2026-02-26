@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
+import Lottie from 'lottie-react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/api/shell';
@@ -19,6 +20,7 @@ import speedIcon from '../../assets/speed.svg';
 import logIcon from '../../assets/log.svg';
 import settingIcon from '../../assets/setting.svg';
 import aboutIcon from '../../assets/about.svg';
+import reloadLottie from '../../assets/reload-lottie.json';
 import {
   DndContext,
   DragOverlay,
@@ -46,6 +48,12 @@ const DRAG_OVERLAY_DROP_ANIMATION = {
 
 const PING_GOOD_THRESHOLD_MS = 120;
 const SPEED_PHASE_DOWNLOAD_DELAY_MS = 1200;
+
+const maskIpAddress = (ip) => {
+  const value = String(ip || '').trim();
+  if (!value || value === 'N/A') return 'N/A';
+  return value.includes(':') ? '••••:••••:••••:••••' : '•••.•••.•••.•••';
+};
 
 const getLatencyTone = (timeMs, warningThresholdMs) => {
   if (!Number.isFinite(timeMs)) return 'neutral';
@@ -514,6 +522,47 @@ const EditIcon = () => (
   </svg>
 );
 
+const EyeOpenIcon = ({ className = '' }) => (
+  <svg className={className} width="18" height="18" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z" />
+  </svg>
+);
+
+const EyeOffIcon = ({ className = '' }) => (
+  <svg className={className} width="18" height="18" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M53.92,34.62A8,8,0,1,0,42.08,45.38L61.32,66.55C25,88.84,9.38,123.2,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208a127.11,127.11,0,0,0,52.07-10.83l22,24.21a8,8,0,1,0,11.84-10.76Zm47.33,75.84,41.67,45.85a32,32,0,0,1-41.67-45.85ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.16,133.16,0,0,1,25,128c4.69-8.79,19.66-33.39,47.35-49.38l18,19.75a48,48,0,0,0,63.66,70l14.73,16.2A112,112,0,0,1,128,192Zm6-95.43a8,8,0,0,1,3-15.72,48.16,48.16,0,0,1,38.77,42.64,8,8,0,0,1-7.22,8.71,6.39,6.39,0,0,1-.75,0,8,8,0,0,1-8-7.26A32.09,32.09,0,0,0,134,96.57Zm113.28,34.69c-.42.94-10.55,23.37-33.36,43.8a8,8,0,1,1-10.67-11.92A132.77,132.77,0,0,0,231.05,128a133.15,133.15,0,0,0-23.12-30.77C185.67,75.19,158.78,64,128,64a118.37,118.37,0,0,0-19.36,1.57A8,8,0,1,1,106,49.79,134,134,0,0,1,128,48c34.88,0,66.57,13.26,91.66,38.35,18.83,18.83,27.3,37.62,27.65,38.41A8,8,0,0,1,247.31,131.26Z" />
+  </svg>
+);
+
+const RefreshIcon = ({ spinning = false }) => {
+  const lottieRef = useRef(null);
+
+  useEffect(() => {
+    const icon = lottieRef.current;
+    if (!icon) return;
+    if (spinning) {
+      icon.setDirection?.(1);
+      icon.setSpeed?.(1);
+      icon.play?.();
+      return;
+    }
+    icon.stop?.();
+    icon.goToAndStop?.(0, true);
+  }, [spinning]);
+
+  return (
+    <span className="refresh-lottie" aria-hidden="true">
+      <Lottie
+        lottieRef={lottieRef}
+        animationData={reloadLottie}
+        loop={spinning}
+        autoplay={false}
+        className="refresh-lottie-player"
+      />
+    </span>
+  );
+};
+
 const TranslateToggle = ({ isActive, onToggle }) => (
   <div className="translate-toggle" onClick={onToggle} role="button" aria-label="Toggle language">
     <img src={earthA} alt="" className={`translate-icon ${isActive ? '' : 'active'}`} />
@@ -632,6 +681,15 @@ const App = () => {
   const [speedLoading, setSpeedLoading] = useState(false);
   const [speedPhase, setSpeedPhase] = useState('idle');
   const [speedProvider, setSpeedProvider] = useState(() => localStorage.getItem('speedProvider') || 'cloudflare');
+  const [publicNetworkInfo, setPublicNetworkInfo] = useState({
+    ip: 'N/A',
+    country: 'N/A',
+  });
+  const [isPublicIpLoading, setIsPublicIpLoading] = useState(false);
+  const [showPublicIp, setShowPublicIp] = useState(() => {
+    const saved = localStorage.getItem('showPublicIp');
+    return saved ? saved === 'true' : true;
+  });
   const [betaUpdates, setBetaUpdates] = useState(() => {
     const saved = localStorage.getItem('betaUpdates');
     return saved === 'true';
@@ -706,6 +764,7 @@ const App = () => {
   const [activeDragId, setActiveDragId] = useState(null);
   const lastOverIdRef = useRef(null);
   const lenisRef = useRef(null);
+  const publicIpFetchInFlightRef = useRef(false);
 
   // dnd-kit sensors
   const sensors = useSensors(
@@ -790,6 +849,26 @@ const App = () => {
     }
   }, []);
 
+  const loadPublicNetworkInfo = useCallback(async () => {
+    if (publicIpFetchInFlightRef.current) return;
+    publicIpFetchInFlightRef.current = true;
+    setIsPublicIpLoading(true);
+    try {
+      const result = await invoke('get_public_network_info');
+      const nextIp = String(result?.ip || '').trim() || 'N/A';
+      const nextCountry = String(result?.country || '').trim().toUpperCase() || 'N/A';
+      setPublicNetworkInfo({
+        ip: nextIp,
+        country: nextCountry,
+      });
+    } catch (error) {
+      console.error('Failed to load public network info:', error);
+    } finally {
+      publicIpFetchInFlightRef.current = false;
+      setIsPublicIpLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       window.clearTimeout(copyTimerRef.current);
@@ -865,6 +944,10 @@ const App = () => {
   }, [speedProvider]);
 
   useEffect(() => {
+    localStorage.setItem('showPublicIp', String(showPublicIp));
+  }, [showPublicIp]);
+
+  useEffect(() => {
     localStorage.setItem('betaUpdates', String(betaUpdates));
   }, [betaUpdates]);
 
@@ -898,6 +981,34 @@ const App = () => {
     };
     loadUsername();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      await loadPublicNetworkInfo();
+    };
+
+    load();
+    const intervalId = window.setInterval(() => {
+      if (!active) return;
+      load();
+    }, 300000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [loadPublicNetworkInfo]);
+
+  useEffect(() => {
+    const nextIp = String(speedMetrics?.ip || '').trim();
+    const nextCountry = String(speedMetrics?.country || '').trim().toUpperCase();
+    if (!nextIp || nextIp === 'N/A') return;
+    setPublicNetworkInfo((prev) => ({
+      ip: nextIp,
+      country: nextCountry || prev.country || 'N/A',
+    }));
+  }, [speedMetrics]);
 
   const handleEditName = () => {
     setIsEditingName(true);
@@ -1245,7 +1356,7 @@ const App = () => {
           addLogEntry({
             type: 'speed',
             title: texts.logSpeedComplete,
-            detail: `${result.downloadMbps} Mbps ↓ • ${result.uploadMbps} Mbps ↑ • ${result.latencyMs} ms${countryPart}`,
+            detail: `${result.downloadMbps} Mbps ? • ${result.uploadMbps} Mbps ? • ${result.latencyMs} ms${countryPart}`,
           });
           return;
         }
@@ -1452,6 +1563,8 @@ const App = () => {
   };
 
   const isIran = (countryCode) => countryCode && countryCode.toUpperCase() === 'IR';
+  const publicIpFlagClass = getFlagClass(publicNetworkInfo.country);
+  const visiblePublicIp = showPublicIp ? publicNetworkInfo.ip : maskIpAddress(publicNetworkInfo.ip);
 
   useEffect(() => {
     const minimizeBtn = document.getElementById('minimize-button');
@@ -1755,6 +1868,10 @@ const App = () => {
       monitoring: 'Monitoring',
       add: 'Add',
       edit: 'Edit',
+      publicIpLabel: 'Public IP',
+      publicIpRefresh: 'Refresh IP',
+      publicIpHide: 'Hide IP',
+      publicIpShow: 'Show IP',
       save: 'Save',
       cancel: 'Cancel',
       copy: 'Copy',
@@ -1881,7 +1998,7 @@ const App = () => {
       settingsAutoLaunchHint: '\u0628\u0627 \u0631\u0648\u0634\u0646 \u0634\u062f\u0646 \u0648\u06cc\u0646\u062f\u0648\u0632 \u0627\u062c\u0631\u0627 \u0634\u0648\u062f',
       settingsPingInterval: '\u0628\u0627\u0632\u0647 \u067e\u06cc\u0646\u06af (\u0645\u06cc\u0644\u06cc \u062b\u0627\u0646\u06cc\u0647)',
       settingsPingIntervalHint: '\u0641\u0627\u0635\u0644\u0647 \u0628\u0647 \u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u067e\u06cc\u0646\u06af',
-      settingsOptimization: 'بهینه سازی',
+      settingsOptimization: '????? ????',
       settingsOptimizationHint: '\u0628\u0631\u0627\u06cc \u06a9\u0627\u0647\u0634 \u0645\u0635\u0631\u0641 CPU \u0646\u0645\u0648\u062f\u0627\u0631 \u062e\u0637\u06cc \u062e\u0627\u0645\u0648\u0634 \u0645\u06cc\u200c\u0634\u0648\u062f',
       settingsUpdateTitle: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a',
       settingsUpdateHint: '\u0645\u0642\u0627\u06cc\u0633\u0647 \u0648\u0631\u0698\u0646 \u0628\u0627 \u06af\u06cc\u062a \u0647\u0627\u0628',
@@ -1904,6 +2021,10 @@ const App = () => {
       monitoring: 'Monitoring',
       add: '\u0627\u0641\u0632\u0648\u062f\u0646',
       edit: '\u0648\u06cc\u0631\u0627\u06cc\u0634',
+      publicIpLabel: '\u0622\u06cc\u200c\u067e\u06cc \u0639\u0645\u0648\u0645\u06cc',
+      publicIpRefresh: '\u0628\u0631\u0631\u0633\u06cc \u0645\u062c\u062f\u062f \u0622\u06cc\u200c\u067e\u06cc',
+      publicIpHide: '\u0645\u062e\u0641\u06cc\u200c\u0633\u0627\u0632\u06cc \u0622\u06cc\u200c\u067e\u06cc',
+      publicIpShow: '\u0646\u0645\u0627\u06cc\u0634 \u0622\u06cc\u200c\u067e\u06cc',
       save: '\u0630\u062e\u06cc\u0631\u0647',
       cancel: '\u0644\u063a\u0648',
       copy: '\u06a9\u067e\u06cc',
@@ -2297,17 +2418,50 @@ const App = () => {
           {currentPage === 'ping' ? (
             <div id="ping-results">
             <div className="add-host-container">
-              <button className="add-host-button" onClick={handleAddNewHost}>
-                <PencilIcon />
-                {texts.add}
-              </button>
-              <button
-                className={`edit-host-button ${isEditMode ? 'active' : ''}`}
-                onClick={() => setIsEditMode(!isEditMode)}
-              >
-                <EditIcon />
-                {texts.edit}
-              </button>
+              <div className="public-ip-widget" title={texts.publicIpLabel}>
+                <div className="public-ip-info">
+                  {isIran(publicNetworkInfo.country) ? (
+                    <img src={iranFlag} alt="" className="public-ip-flag-img" />
+                  ) : publicIpFlagClass ? (
+                    <span className={`public-ip-flag ${publicIpFlagClass}`} aria-hidden="true"></span>
+                  ) : (
+                    <span className="public-ip-flag-fallback" aria-hidden="true">--</span>
+                  )}
+                  <span className="public-ip-value">{visiblePublicIp}</span>
+                </div>
+                <button
+                  type="button"
+                  className="public-ip-action"
+                  onClick={loadPublicNetworkInfo}
+                  aria-label={texts.publicIpRefresh}
+                  title={texts.publicIpRefresh}
+                  disabled={isPublicIpLoading}
+                >
+                  <RefreshIcon spinning={isPublicIpLoading} />
+                </button>
+                <button
+                  type="button"
+                  className="public-ip-action public-ip-action-visibility"
+                  onClick={() => setShowPublicIp((prev) => !prev)}
+                  aria-label={showPublicIp ? texts.publicIpHide : texts.publicIpShow}
+                  title={showPublicIp ? texts.publicIpHide : texts.publicIpShow}
+                >
+                  {showPublicIp ? <EyeOffIcon className="public-ip-visibility-icon" /> : <EyeOpenIcon className="public-ip-visibility-icon" />}
+                </button>
+              </div>
+              <div className="add-host-actions">
+                <button className="add-host-button" onClick={handleAddNewHost}>
+                  <PencilIcon />
+                  {texts.add}
+                </button>
+                <button
+                  className={`edit-host-button ${isEditMode ? 'active' : ''}`}
+                  onClick={() => setIsEditMode(!isEditMode)}
+                >
+                  <EditIcon />
+                  {texts.edit}
+                </button>
+              </div>
             </div>
             {isEditMode && <div className="reorder-hint">{texts.reorderHint}</div>}
 
@@ -3040,4 +3194,6 @@ const App = () => {
 };
 
 export default App;
+
+
 
