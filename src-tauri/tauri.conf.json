@@ -1,13 +1,13 @@
 {
   "build": {
-    "beforeDevCommand": "npm run dev:ui -- --host",
+    "beforeDevCommand": "npm run dev:ui",
     "beforeBuildCommand": "npm run build:ui",
-    "devPath": "http://localhost:5173",
+    "devPath": "http://127.0.0.1:5173",
     "distDir": "../dist"
   },
   "package": {
     "productName": "PulseNet",
-    "version": "1.5.1"
+    "version": "1.6.0"
   },
   "tauri": {
     "allowlist": {
@@ -43,6 +43,9 @@
         "wix": {
           "fragmentPaths": [
             "wix/legacy-nsis-cleanup.wxs"
+          ],
+          "componentGroupRefs": [
+            "LegacyNsisCleanupGroup"
           ]
         }
       },

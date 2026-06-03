@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="LegacyNsisCleanupAnchor" Guid="*">
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\pulsenet\PulseNet"
+          Name="LegacyNsisCleanupAnchor"
+          Type="integer"
+          Value="1"
+          KeyPath="yes"
+        />
+      </Component>
+    </DirectoryRef>
+
+    <ComponentGroup Id="LegacyNsisCleanupGroup">
+      <ComponentRef Id="LegacyNsisCleanupAnchor" />
+    </ComponentGroup>
+
     <Property Id="OLD_NSIS_UNINSTALL_HKLM">
       <RegistrySearch
         Id="OldNsisUninstallHKLM"
@@ -25,7 +42,7 @@
       Id="UninstallOldNsisHKLM"
       Directory="TARGETDIR"
       ExeCommand='[OLD_NSIS_UNINSTALL_HKLM] /S'
-      Execute="deferred"
+      Execute="immediate"
       Return="ignore"
       Impersonate="no"
     />
@@ -34,8 +51,17 @@
       Id="UninstallOldNsisHKCU"
       Directory="TARGETDIR"
       ExeCommand='[OLD_NSIS_UNINSTALL_HKCU] /S'
-      Execute="deferred"
+      Execute="immediate"
       Return="ignore"
+      Impersonate="yes"
+    />
+
+    <CustomAction
+      Id="LaunchPulseNetFromFinish"
+      Directory="INSTALLDIR"
+      ExeCommand='cmd.exe /C start "" "[#Path]"'
+      Execute="immediate"
+      Return="asyncNoWait"
       Impersonate="yes"
     />
 
@@ -47,5 +73,11 @@
         NOT Installed AND NOT REMOVE AND OLD_NSIS_UNINSTALL_HKCU
       </Custom>
     </InstallExecuteSequence>
+
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchPulseNetFromFinish">
+        WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed
+      </Publish>
+    </UI>
   </Fragment>
 </Wix>

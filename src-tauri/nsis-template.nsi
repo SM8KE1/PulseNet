@@ -540,6 +540,9 @@ FunctionEnd
 
 
 Section EarlyChecks
+  ; Always remove previously installed MSI variant (if any) before continuing.
+  Call UninstallPreviousMsiIfFound
+
   ; Abort silent installer if downgrades is disabled
   !if "${ALLOWDOWNGRADES}" == "false"
   IfSilent 0 silent_downgrades_done
@@ -557,6 +560,112 @@ Section EarlyChecks
   !endif
 
 SectionEnd
+
+Function UninstallPreviousMsiIfFound
+  StrCpy $R8 ""
+  StrCpy $0 0
+
+  scan_msi_hklm_64:
+    EnumRegKey $1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
+    StrCmp $1 "" scan_msi_hkcu_64
+    IntOp $0 $0 + 1
+    ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
+    ${StrCase} $R3 "$R0" "L"
+    ${StrCase} $R4 "${PRODUCTNAME}" "L"
+    ${StrLoc} $R5 $R3 $R4 ">"
+    StrCmp "$R5" "" scan_msi_hklm_64
+    ReadRegDWORD $R2 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
+    StrCmp $R2 1 0 scan_msi_hklm_64
+    StrCpy $R8 "$1"
+    Goto uninstall_msi_found
+
+  scan_msi_hkcu_64:
+    StrCpy $0 0
+  scan_msi_hkcu_64_loop:
+    EnumRegKey $1 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
+    StrCmp $1 "" scan_msi_32_view
+    IntOp $0 $0 + 1
+    ReadRegStr $R0 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
+    ${StrCase} $R3 "$R0" "L"
+    ${StrCase} $R4 "${PRODUCTNAME}" "L"
+    ${StrLoc} $R5 $R3 $R4 ">"
+    StrCmp "$R5" "" scan_msi_hkcu_64_loop
+    ReadRegDWORD $R2 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
+    StrCmp $R2 1 0 scan_msi_hkcu_64_loop
+    StrCpy $R8 "$1"
+    Goto uninstall_msi_found
+
+  scan_msi_32_view:
+  ${If} ${RunningX64}
+    SetRegView 32
+    StrCpy $0 0
+    scan_msi_hklm_32:
+      EnumRegKey $1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
+      StrCmp $1 "" scan_msi_hkcu_32
+      IntOp $0 $0 + 1
+      ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
+      ${StrCase} $R3 "$R0" "L"
+      ${StrCase} $R4 "${PRODUCTNAME}" "L"
+      ${StrLoc} $R5 $R3 $R4 ">"
+      StrCmp "$R5" "" scan_msi_hklm_32
+      ReadRegDWORD $R2 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
+      StrCmp $R2 1 0 scan_msi_hklm_32
+      StrCpy $R8 "$1"
+      Goto restore_regview_and_uninstall
+
+    scan_msi_hkcu_32:
+      StrCpy $0 0
+    scan_msi_hkcu_32_loop:
+      EnumRegKey $1 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall" $0
+      StrCmp $1 "" restore_regview_and_return
+      IntOp $0 $0 + 1
+      ReadRegStr $R0 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
+      ${StrCase} $R3 "$R0" "L"
+      ${StrCase} $R4 "${PRODUCTNAME}" "L"
+      ${StrLoc} $R5 $R3 $R4 ">"
+      StrCmp "$R5" "" scan_msi_hkcu_32_loop
+      ReadRegDWORD $R2 HKCU "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "WindowsInstaller"
+      StrCmp $R2 1 0 scan_msi_hkcu_32_loop
+      StrCpy $R8 "$1"
+      Goto restore_regview_and_uninstall
+  ${Else}
+    Goto uninstall_msi_found
+  ${EndIf}
+
+  restore_regview_and_return:
+  ${If} ${RunningX64}
+    !if "${ARCH}" == "x64"
+      SetRegView 64
+    !else if "${ARCH}" == "arm64"
+      SetRegView 64
+    !else
+      SetRegView 32
+    !endif
+  ${EndIf}
+  Return
+
+  restore_regview_and_uninstall:
+  ${If} ${RunningX64}
+    !if "${ARCH}" == "x64"
+      SetRegView 64
+    !else if "${ARCH}" == "arm64"
+      SetRegView 64
+    !else
+      SetRegView 32
+    !endif
+  ${EndIf}
+
+  uninstall_msi_found:
+    StrCmp "$R8" "" done_uninstall_msi
+    ExecWait 'msiexec.exe /x $R8 /passive /norestart' $0
+    ${If} $0 <> 0
+    ${AndIf} $0 <> 3010
+    ${AndIf} $0 <> 1641
+      MessageBox MB_ICONEXCLAMATION "$(unableToUninstall)"
+      Abort
+    ${EndIf}
+  done_uninstall_msi:
+FunctionEnd
 
 Section WebView2
   ; Check if Webview2 is already installed and skip this section

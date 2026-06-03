@@ -1,11 +1,11 @@
 {
   "name": "pulsenet",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Ping Monitoring",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "dev:ui": "vite",
+    "dev:ui": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build:ui": "vite build"
   },
   "author": "SM0KE",

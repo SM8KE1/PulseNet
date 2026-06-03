@@ -6,13 +6,14 @@ use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
 use std::net::SocketAddr;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use surge_ping::{Client as PingClient, Config as PingConfig, PingIdentifier, PingSequence, ICMP};
 use tauri::{
   AppHandle, CustomMenuItem, Manager, State, SystemTray, SystemTrayEvent, SystemTrayMenu,
   SystemTrayMenuItem, Window, WindowEvent,
@@ -21,11 +22,11 @@ use tokio::net::lookup_host;
 use tokio::time::timeout;
 use trust_dns_resolver::config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts};
 use trust_dns_resolver::TokioAsyncResolver;
-use surge_ping::{Client as PingClient, Config as PingConfig, ICMP, PingIdentifier, PingSequence};
 
 const GITHUB_REPO: &str = "SM8KE1/PulseNet";
 const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/SM8KE1/PulseNet/releases/latest";
-const GITHUB_RELEASES_LIST_URL: &str = "https://api.github.com/repos/SM8KE1/PulseNet/releases?per_page=20";
+const GITHUB_RELEASES_LIST_URL: &str =
+  "https://api.github.com/repos/SM8KE1/PulseNet/releases?per_page=20";
 
 const CLOUDFLARE_BASE: &str = "https://speed.cloudflare.com";
 const HETZNER_DOWNLOAD_URL: &str = "https://speed.hetzner.de/10MB.bin";
@@ -35,7 +36,7 @@ const DOWNLOAD_BYTES: usize = 10 * 1024 * 1024;
 const UPLOAD_BYTES: usize = 5 * 1024 * 1024;
 const PING_SAMPLES: usize = 5;
 const DNS_TIMEOUT_MS: u64 = 4000;
-const DNS_ADAPTER_CACHE_TTL_MS: u128 = 5000;
+const DNS_ADAPTER_CACHE_TTL_MS: u128 = 30_000;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -105,6 +106,9 @@ struct DnsResponse {
 struct DnsAdapter {
   name: String,
   dns: Vec<String>,
+  ipv4: Option<String>,
+  gateway: Option<String>,
+  status: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -329,8 +333,12 @@ fn parse_dns_adapters_from_output(output: &str) -> Vec<DnsAdapter> {
     if name.is_empty() {
       continue;
     }
-    let dns = item
-      .get("ServerAddresses")
+    let dns_value = item.get("ServerAddresses").or_else(|| {
+      item
+        .get("DNSServer")
+        .and_then(|value| value.get("ServerAddresses"))
+    });
+    let dns = dns_value
       .and_then(|value| value.as_array())
       .map(|values| {
         values
@@ -340,7 +348,58 @@ fn parse_dns_adapters_from_output(output: &str) -> Vec<DnsAdapter> {
           .collect::<Vec<String>>()
       })
       .unwrap_or_default();
-    adapters.push(DnsAdapter { name, dns });
+    let ipv4 = item
+      .get("IPv4Address")
+      .and_then(|value| value.get("IPAddress").or(Some(value)))
+      .and_then(|value| {
+        if let Some(text) = value.as_str() {
+          Some(text.trim().to_string())
+        } else {
+          value
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(|first| {
+              first
+                .as_str()
+                .or_else(|| first.get("IPAddress").and_then(|ip| ip.as_str()))
+            })
+            .map(|text| text.trim().to_string())
+        }
+      })
+      .filter(|value| !value.is_empty());
+    let gateway = item
+      .get("IPv4DefaultGateway")
+      .and_then(|value| value.get("NextHop").or(Some(value)))
+      .and_then(|value| {
+        if let Some(text) = value.as_str() {
+          Some(text.trim().to_string())
+        } else {
+          value
+            .as_array()
+            .and_then(|items| items.first())
+            .and_then(|first| {
+              first
+                .as_str()
+                .or_else(|| first.get("NextHop").and_then(|hop| hop.as_str()))
+            })
+            .map(|text| text.trim().to_string())
+        }
+      })
+      .filter(|value| !value.is_empty());
+    let status = item
+      .get("NetAdapter")
+      .and_then(|value| value.get("Status"))
+      .or_else(|| item.get("Status"))
+      .and_then(|value| value.as_str())
+      .map(|text| text.trim().to_string())
+      .filter(|value| !value.is_empty());
+    adapters.push(DnsAdapter {
+      name,
+      dns,
+      ipv4,
+      gateway,
+      status,
+    });
   }
   adapters.sort_by(|left, right| left.name.cmp(&right.name));
   adapters
@@ -394,7 +453,11 @@ async fn ping_host(host: String) -> PingResponse {
   pinger.timeout(Duration::from_secs(2));
 
   let payload = vec![0u8; 32];
-  let result = timeout(Duration::from_secs(2), pinger.ping(PingSequence(0), &payload)).await;
+  let result = timeout(
+    Duration::from_secs(2),
+    pinger.ping(PingSequence(0), &payload),
+  )
+  .await;
   match result {
     Ok(Ok((_packet, rtt))) => PingResponse {
       alive: true,
@@ -450,7 +513,11 @@ fn set_auto_launch(app: tauri::AppHandle, enabled: bool) -> bool {
   #[cfg(not(target_os = "windows"))]
   {
     let launcher = auto_launcher();
-    let _ = if enabled { launcher.enable() } else { launcher.disable() };
+    let _ = if enabled {
+      launcher.enable()
+    } else {
+      launcher.disable()
+    };
     launcher.is_enabled().unwrap_or(false)
   }
 }
@@ -496,12 +563,15 @@ fn perform_close_action(action: String, window: Window) -> bool {
 }
 
 #[tauri::command]
-async fn test_dns_servers(domain: String) -> DnsResponse {
-  test_dns_servers_with_custom(domain, None).await
+fn set_tray_status(app: AppHandle, status: String) -> bool {
+  app.tray_handle().set_tooltip(&status).is_ok()
 }
 
 #[tauri::command]
-async fn test_dns_servers_with_custom(domain: String, custom_servers: Option<Vec<String>>) -> DnsResponse {
+async fn test_dns_servers_with_custom(
+  domain: String,
+  custom_servers: Option<Vec<String>>,
+) -> DnsResponse {
   let sanitized = sanitize_domain(&domain);
   if sanitized.is_empty() {
     return DnsResponse {
@@ -547,7 +617,11 @@ async fn test_dns_servers_with_custom(domain: String, custom_servers: Option<Vec
     opts.timeout = Duration::from_millis(DNS_TIMEOUT_MS);
 
     let resolver = TokioAsyncResolver::tokio(resolver_config, opts);
-    let lookup = timeout(Duration::from_millis(DNS_TIMEOUT_MS), resolver.lookup_ip(sanitized.clone())).await;
+    let lookup = timeout(
+      Duration::from_millis(DNS_TIMEOUT_MS),
+      resolver.lookup_ip(sanitized.clone()),
+    )
+    .await;
     match lookup {
       Ok(Ok(_)) => results.push(DnsResult {
         server,
@@ -570,7 +644,10 @@ async fn test_dns_servers_with_custom(domain: String, custom_servers: Option<Vec
     }
   }
 
-  DnsResponse { error: None, results }
+  DnsResponse {
+    error: None,
+    results,
+  }
 }
 
 #[tauri::command]
@@ -588,7 +665,7 @@ fn list_dns_adapters(force_refresh: Option<bool>) -> Vec<DnsAdapter> {
       }
     }
 
-    let command = "Get-DnsClientServerAddress -AddressFamily IPv4 | Select-Object InterfaceAlias,ServerAddresses | ConvertTo-Json -Depth 4 -Compress";
+    let command = "$excludedPattern = '(?i)(bluetooth|vpn|openvpn|wireguard|wintun|tap|tun|tunnel|tailscale|zerotier|hamachi|expressvpn|nordvpn|protonvpn|surfshark|virtualbox|vmware|hyper-v|loopback|pseudo|wiresock)'; $dnsItems = @(Get-DnsClientServerAddress -AddressFamily IPv4); $adapters = @(Get-NetAdapter); $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue); $routes = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -and $_.NextHop -ne '0.0.0.0' }); $defaultRouteIndexes = @($routes | Select-Object -ExpandProperty InterfaceIndex -Unique); $dnsItems | ForEach-Object { $dns = $_; $adapter = $adapters | Where-Object { $_.InterfaceIndex -eq $dns.InterfaceIndex } | Select-Object -First 1; if (-not $adapter) { return }; $ipv4 = @($ips | Where-Object { $_.InterfaceIndex -eq $dns.InterfaceIndex -and $_.IPAddress -and $_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 1 -ExpandProperty IPAddress); $gateway = @($routes | Where-Object { $_.InterfaceIndex -eq $dns.InterfaceIndex } | Select-Object -First 1 -ExpandProperty NextHop); $searchText = \"$($dns.InterfaceAlias) $($adapter.Name) $($adapter.InterfaceDescription) $($adapter.ComponentID)\"; $isExcluded = $searchText -match $excludedPattern; $isUsable = $adapter.Status -eq 'Up' -and $adapter.HardwareInterface -eq $true -and $adapter.Virtual -ne $true -and -not $isExcluded -and (($gateway.Count -gt 0) -or ($defaultRouteIndexes -contains $dns.InterfaceIndex)); if ($isUsable) { [pscustomobject]@{ InterfaceAlias = $dns.InterfaceAlias; InterfaceIndex = $dns.InterfaceIndex; ServerAddresses = $dns.ServerAddresses; IPv4Address = $ipv4; IPv4DefaultGateway = $gateway; Status = $adapter.Status } } } | ConvertTo-Json -Depth 4 -Compress";
     let output = match run_powershell(command) {
       Ok(stdout) => stdout,
       Err(_) => return vec![],
@@ -608,7 +685,11 @@ fn list_dns_adapters(force_refresh: Option<bool>) -> Vec<DnsAdapter> {
 }
 
 #[tauri::command]
-fn set_adapter_dns(adapter_name: String, primary_dns: String, secondary_dns: Option<String>) -> DnsManagerResult {
+fn set_adapter_dns(
+  adapter_name: String,
+  primary_dns: String,
+  secondary_dns: Option<String>,
+) -> DnsManagerResult {
   #[cfg(target_os = "windows")]
   {
     let adapter = adapter_name.trim();
@@ -718,7 +799,10 @@ async fn measure_ping(client: &HttpClient, url: &str) -> (f64, f64) {
 async fn measure_download_cloudflare(client: &HttpClient) -> f64 {
   let start = Instant::now();
   let response = client
-    .get(format!("{}/__down?bytes={}", CLOUDFLARE_BASE, DOWNLOAD_BYTES))
+    .get(format!(
+      "{}/__down?bytes={}",
+      CLOUDFLARE_BASE, DOWNLOAD_BYTES
+    ))
     .send()
     .await;
   if response.is_err() {
@@ -767,11 +851,7 @@ async fn measure_upload_cloudflare(client: &HttpClient) -> f64 {
 async fn measure_upload_hetzner(client: &HttpClient) -> f64 {
   let payload = vec![0u8; UPLOAD_BYTES];
   let start = Instant::now();
-  let response = client
-    .post(HETZNER_UPLOAD_URL)
-    .body(payload)
-    .send()
-    .await;
+  let response = client.post(HETZNER_UPLOAD_URL).body(payload).send().await;
   if response.is_err() {
     return 0.0;
   }
@@ -965,7 +1045,11 @@ async fn check_for_updates(include_prerelease: Option<bool>) -> UpdateCheckResul
   let include_prerelease = include_prerelease.unwrap_or(false);
   let current_version = env!("CARGO_PKG_VERSION").to_string();
   let response = client
-    .get(if include_prerelease { GITHUB_RELEASES_LIST_URL } else { GITHUB_RELEASES_URL })
+    .get(if include_prerelease {
+      GITHUB_RELEASES_LIST_URL
+    } else {
+      GITHUB_RELEASES_URL
+    })
     .header("User-Agent", "PulseNet")
     .send()
     .await;
@@ -1019,7 +1103,10 @@ async fn check_for_updates(include_prerelease: Option<bool>) -> UpdateCheckResul
   let url = release
     .get("html_url")
     .and_then(|value| value.as_str())
-    .unwrap_or(&format!("https://github.com/{}/releases/latest", GITHUB_REPO))
+    .unwrap_or(&format!(
+      "https://github.com/{}/releases/latest",
+      GITHUB_REPO
+    ))
     .to_string();
 
   UpdateCheckResult {
@@ -1063,35 +1150,36 @@ fn main() {
     .add_item(CustomMenuItem::new("show".to_string(), "Show PulseNet"))
     .add_item(CustomMenuItem::new("settings".to_string(), "Settings"))
     .add_native_item(SystemTrayMenuItem::Separator)
-    .add_item(CustomMenuItem::new("restart".to_string(), "Restart PulseNet"))
+    .add_item(CustomMenuItem::new(
+      "restart".to_string(),
+      "Restart PulseNet",
+    ))
     .add_item(CustomMenuItem::new("exit".to_string(), "Exit"));
 
   tauri::Builder::default()
     .manage(AppState::default())
     .system_tray(SystemTray::new().with_menu(tray_menu))
-    .on_system_tray_event(|app, event| {
-      match event {
-        SystemTrayEvent::LeftClick { .. } => {
+    .on_system_tray_event(|app, event| match event {
+      SystemTrayEvent::LeftClick { .. } => {
+        show_main_window(app);
+      }
+      SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
+        "show" => show_main_window(app),
+        "settings" => {
           show_main_window(app);
+          if let Some(window) = app.get_window("main") {
+            let _ = window.emit("tray-open-page", serde_json::json!({ "page": "settings" }));
+          }
         }
-        SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
-          "show" => show_main_window(app),
-          "settings" => {
-            show_main_window(app);
-            if let Some(window) = app.get_window("main") {
-              let _ = window.emit("tray-open-page", serde_json::json!({ "page": "settings" }));
-            }
-          }
-          "restart" => {
-            app.restart();
-          }
-          "exit" => {
-            app.exit(0);
-          }
-          _ => {}
+        "restart" => {
+          app.restart();
+        }
+        "exit" => {
+          app.exit(0);
         }
         _ => {}
-      }
+      },
+      _ => {}
     })
     .on_window_event(|event| {
       if let WindowEvent::CloseRequested { api, .. } = event.event() {
@@ -1111,7 +1199,7 @@ fn main() {
       get_close_action,
       set_close_action,
       perform_close_action,
-      test_dns_servers,
+      set_tray_status,
       test_dns_servers_with_custom,
       list_dns_adapters,
       set_adapter_dns,

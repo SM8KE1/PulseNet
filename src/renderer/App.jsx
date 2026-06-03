@@ -21,6 +21,7 @@ import logIcon from '../../assets/log.svg';
 import settingIcon from '../../assets/setting.svg';
 import aboutIcon from '../../assets/about.svg';
 import reloadLottie from '../../assets/reload-lottie.json';
+import giftLottie from '../../assets/gift-lottie.json';
 import {
   DndContext,
   DragOverlay,
@@ -48,12 +49,47 @@ const DRAG_OVERLAY_DROP_ANIMATION = {
 
 const PING_GOOD_THRESHOLD_MS = 120;
 const SPEED_PHASE_DOWNLOAD_DELAY_MS = 1200;
+const DONATE_NUDGE_DELAY_MS = 2 * 60 * 1000;
+const DEFAULT_HOSTS = [
+  { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
+  { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
+  { type: 'default', label: 'Time.ir', host: 'time.ir' },
+  { type: 'default', label: 'YouTube', host: 'youtube.com' },
+];
+const HOST_PROFILES = {
+  gaming: [
+    { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
+    { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
+    { type: 'custom', id: 1700000000010, label: 'Steam', host: 'store.steampowered.com' },
+    { type: 'custom', id: 1700000000011, label: 'Discord', host: 'discord.com' },
+  ],
+  work: [
+    { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
+    { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
+    { type: 'custom', id: 1700000000020, label: 'GitHub', host: 'github.com' },
+    { type: 'custom', id: 1700000000021, label: 'Microsoft', host: 'microsoft.com' },
+  ],
+  streaming: [
+    { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
+    { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
+    { type: 'custom', id: 1700000000030, label: 'YouTube', host: 'youtube.com' },
+    { type: 'custom', id: 1700000000031, label: 'Netflix', host: 'netflix.com' },
+  ],
+  iran: [
+    { type: 'default', label: 'Time.ir', host: 'time.ir' },
+    { type: 'custom', id: 1700000000040, label: 'Aparat', host: 'aparat.com' },
+    { type: 'custom', id: 1700000000041, label: 'Digikala', host: 'digikala.com' },
+    { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
+  ],
+};
 
 const maskIpAddress = (ip) => {
   const value = String(ip || '').trim();
   if (!value || value === 'N/A') return 'N/A';
   return value.includes(':') ? '••••:••••:••••:••••' : '•••.•••.•••.•••';
 };
+
+const getDefaultHosts = () => DEFAULT_HOSTS.map((host) => ({ ...host }));
 
 const getLatencyTone = (timeMs, warningThresholdMs) => {
   if (!Number.isFinite(timeMs)) return 'neutral';
@@ -105,22 +141,10 @@ const useHosts = () => {
         setAllHosts(parsedHosts);
       } catch (e) {
         console.error('Error parsing hosts from localStorage:', e);
-        // Fallback to default hosts if parsing fails
-        setAllHosts([
-          { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
-          { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
-          { type: 'default', label: 'Time.ir', host: 'time.ir' },
-          { type: 'default', label: 'YouTube', host: 'youtube.com' },
-        ]);
+        setAllHosts(getDefaultHosts());
       }
     } else {
-      // Initialize with default hosts
-      const defaultHosts = [
-        { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
-        { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
-        { type: 'default', label: 'Time.ir', host: 'time.ir' },
-        { type: 'default', label: 'YouTube', host: 'youtube.com' },
-      ];
+      const defaultHosts = getDefaultHosts();
       setAllHosts(defaultHosts);
       localStorage.setItem('allHosts', JSON.stringify(defaultHosts));
     }
@@ -144,6 +168,7 @@ const usePing = (host, statusTexts, intervalMs, enabled = true, showPausedState 
     errorKind: null,
   });
   const [history, setHistory] = useState([]);
+  const [sampleWindow, setSampleWindow] = useState([]);
   const maxHistoryPoints = useMemo(() => {
     const safeInterval = Math.max(250, Number(intervalMs) || 1000);
     return Math.max(18, Math.min(100, Math.floor(60_000 / safeInterval)));
@@ -171,6 +196,15 @@ const usePing = (host, statusTexts, intervalMs, enabled = true, showPausedState 
         return next;
       });
     };
+    const pushSample = (alive) => {
+      setSampleWindow((prev) => {
+        const next = [...prev, Boolean(alive)];
+        if (next.length > 20) {
+          next.splice(0, next.length - 20);
+        }
+        return next;
+      });
+    };
 
     if (!enabled) {
       if (showPausedState) {
@@ -191,6 +225,7 @@ const usePing = (host, statusTexts, intervalMs, enabled = true, showPausedState 
         if (isCancelled) return;
         if (result.error) {
           pushHistory(null);
+          pushSample(false);
           if (result.error.includes('permission')) {
             setPingData({
               status: statusTexts.needAdmin,
@@ -208,6 +243,7 @@ const usePing = (host, statusTexts, intervalMs, enabled = true, showPausedState 
           }
         } else if (!result.alive) {
           pushHistory(null);
+          pushSample(false);
           setPingData({
             status: statusTexts.noResponse,
             hasError: true,
@@ -216,6 +252,7 @@ const usePing = (host, statusTexts, intervalMs, enabled = true, showPausedState 
           });
         } else {
           pushHistory(result.time);
+          pushSample(true);
           setPingData({
             status: `${Math.round(result.time)}ms`,
             hasError: false,
@@ -226,6 +263,7 @@ const usePing = (host, statusTexts, intervalMs, enabled = true, showPausedState 
       } catch (e) {
         if (isCancelled) return;
         pushHistory(null);
+        pushSample(false);
         console.error('Ping IPC failed:', e);
         setPingData({
           status: statusTexts.ipcError,
@@ -248,6 +286,8 @@ const usePing = (host, statusTexts, intervalMs, enabled = true, showPausedState 
   return {
     ...pingData,
     history,
+    lossPercent: sampleWindow.length ? Math.round((sampleWindow.filter((alive) => !alive).length / sampleWindow.length) * 100) : 0,
+    sampleCount: sampleWindow.length,
     isPending: enabled && history.length === 0,
   };
 };
@@ -299,6 +339,7 @@ const SortableItem = ({
   pingIntervalMs,
   onLog,
   pingAlertThresholdMs,
+  packetLossAlertThreshold,
   isPinned = false,
   isPaused = false,
   isCopied = false,
@@ -318,7 +359,7 @@ const SortableItem = ({
   } = useSortable({ id });
 
   const shouldPollPing = !isPaused && !isEditMode && !editing;
-  const { status, hasError, timeMs, errorKind, history, isPending } = usePing(
+  const { status, hasError, timeMs, errorKind, history, lossPercent, sampleCount, isPending } = usePing(
     host,
     statusTexts,
     pingIntervalMs,
@@ -370,7 +411,15 @@ const SortableItem = ({
         detail: `${label} • ${host} • ${Math.round(timeMs)}ms`,
       });
     }
-  }, [onLog, isEditMode, hasError, errorKind, timeMs, pingAlertThresholdMs, label, host, status, texts]);
+    if (sampleCount >= 8 && lossPercent >= packetLossAlertThreshold) {
+      lastAlertRef.current = now;
+      onLog({
+        type: 'alert',
+        title: texts.logPacketLoss,
+        detail: `${label} • ${host} • ${lossPercent}%`,
+      });
+    }
+  }, [onLog, isEditMode, hasError, errorKind, timeMs, pingAlertThresholdMs, packetLossAlertThreshold, lossPercent, sampleCount, label, host, status, texts]);
 
   const handleSave = () => {
     if (editLabel.trim() && editHost.trim()) {
@@ -462,6 +511,9 @@ const SortableItem = ({
         </div>
         <div className="ping-ip">{host}</div>
         {!isEditMode && (
+          <div className="ping-loss">{texts.packetLoss}: {sampleCount ? `${lossPercent}%` : '--'}</div>
+        )}
+        {!isEditMode && (
           <div className="ping-sparkline-slot">
             {!optimizationEnabled && <PingSparkline values={history} tone={tone} />}
           </div>
@@ -521,6 +573,52 @@ const EditIcon = () => (
     <path d="M8 8h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
 );
+
+const GiftIcon = () => {
+  const lottieRef = useRef(null);
+
+  const playSegment = useCallback((segment, speed = 1) => {
+    const icon = lottieRef.current;
+    if (!icon) return;
+    icon.setSpeed?.(speed);
+    icon.playSegments?.(segment, true);
+  }, []);
+
+  const playRolling = useCallback(() => {
+    playSegment([300, 370], 0.9);
+  }, [playSegment]);
+
+  useEffect(() => {
+    const icon = lottieRef.current;
+    if (!icon) return undefined;
+
+    const handleComplete = () => {
+      playRolling();
+    };
+
+    icon.addEventListener?.('complete', handleComplete);
+    playRolling();
+
+    return () => {
+      icon.removeEventListener?.('complete', handleComplete);
+    };
+  }, [playRolling]);
+
+  return (
+    <span
+      className="sidebar-gift-lottie"
+      aria-hidden="true"
+    >
+      <Lottie
+        lottieRef={lottieRef}
+        animationData={giftLottie}
+        loop={false}
+        autoplay={false}
+        className="sidebar-gift-lottie-player"
+      />
+    </span>
+  );
+};
 
 const EyeOpenIcon = ({ className = '' }) => (
   <svg className={className} width="18" height="18" viewBox="0 0 256 256" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -667,6 +765,8 @@ const App = () => {
     const saved = localStorage.getItem('pingIntervalMs');
     return saved ? Number(saved) : 2000;
   });
+  const [activeProfile, setActiveProfile] = useState(() => localStorage.getItem('activeProfile') || 'custom');
+  const [compactMode, setCompactMode] = useState(() => localStorage.getItem('compactMode') === 'true');
   const [optimizationEnabled, setOptimizationEnabled] = useState(() => {
     const saved = localStorage.getItem('optimizationEnabled');
     return saved === 'true';
@@ -733,12 +833,22 @@ const App = () => {
   const [dnsPrimaryInput, setDnsPrimaryInput] = useState('');
   const [dnsSecondaryInput, setDnsSecondaryInput] = useState('');
   const [dnsManagerStatus, setDnsManagerStatus] = useState('');
+  const [lastDnsBackup, setLastDnsBackup] = useState(() => {
+    const stored = localStorage.getItem('lastDnsBackup');
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return null;
+    }
+  });
   const [updateStatus, setUpdateStatus] = useState('');
   const [updateInfo, setUpdateInfo] = useState(null);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [closeRememberChoice, setCloseRememberChoice] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
+  const [firstRunOpen, setFirstRunOpen] = useState(() => localStorage.getItem('firstRunSetupDone') !== 'true');
   const scrollRef = useRef(null);
   const [isPersian, setIsPersian] = useState(() => {
     const savedLocale = localStorage.getItem('locale');
@@ -758,10 +868,14 @@ const App = () => {
     }
   });
   const [logFilter, setLogFilter] = useState('all');
+  const [logSearch, setLogSearch] = useState('');
+  const [logDateFilter, setLogDateFilter] = useState('all');
   const logAlertCooldownRef = useRef({});
   const copyTimerRef = useRef(0);
+  const importSettingsInputRef = useRef(null);
   const [copyFeedbackKey, setCopyFeedbackKey] = useState('');
   const [activeDragId, setActiveDragId] = useState(null);
+  const [showDonateNudge, setShowDonateNudge] = useState(false);
   const lastOverIdRef = useRef(null);
   const lenisRef = useRef(null);
   const publicIpFetchInFlightRef = useRef(false);
@@ -777,6 +891,19 @@ const App = () => {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  useEffect(() => {
+    const donateNudgeTimer = window.setTimeout(() => {
+      setShowDonateNudge(true);
+    }, DONATE_NUDGE_DELAY_MS);
+
+    return () => window.clearTimeout(donateNudgeTimer);
+  }, []);
+
+  const handleDonateClick = useCallback(() => {
+    setShowDonateNudge(false);
+    open('https://daramet.com/SM0KE');
+  }, []);
 
   const toggleTheme = () => {
     setDarkMode(prevMode => !prevMode);
@@ -795,6 +922,7 @@ const App = () => {
   };
 
   const pingAlertThresholdMs = 250;
+  const packetLossAlertThreshold = 30;
 
   const addLogEntry = useCallback((entry) => {
     setLogEntries((prev) => {
@@ -857,9 +985,20 @@ const App = () => {
       const result = await invoke('get_public_network_info');
       const nextIp = String(result?.ip || '').trim() || 'N/A';
       const nextCountry = String(result?.country || '').trim().toUpperCase() || 'N/A';
-      setPublicNetworkInfo({
-        ip: nextIp,
-        country: nextCountry,
+      setPublicNetworkInfo((prev) => {
+        const changed = prev.ip !== 'N/A' && nextIp !== 'N/A' && (prev.ip !== nextIp || prev.country !== nextCountry);
+        if (changed) {
+          const detail = `${prev.ip} (${prev.country}) → ${nextIp} (${nextCountry})`;
+          addLogEntry({
+            type: 'network',
+            title: 'Public IP changed',
+            detail,
+          });
+        }
+        return {
+          ip: nextIp,
+          country: nextCountry,
+        };
       });
     } catch (error) {
       console.error('Failed to load public network info:', error);
@@ -867,7 +1006,7 @@ const App = () => {
       publicIpFetchInFlightRef.current = false;
       setIsPublicIpLoading(false);
     }
-  }, []);
+  }, [addLogEntry]);
 
   useEffect(() => {
     return () => {
@@ -938,6 +1077,16 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', String(isSidebarCollapsed));
   }, [isSidebarCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('activeProfile', activeProfile);
+  }, [activeProfile]);
+
+  useEffect(() => {
+    localStorage.setItem('compactMode', String(compactMode));
+    document.body.classList.toggle('compact-mode', compactMode);
+    return () => document.body.classList.remove('compact-mode');
+  }, [compactMode]);
 
   useEffect(() => {
     localStorage.setItem('speedProvider', speedProvider);
@@ -1025,6 +1174,30 @@ const App = () => {
   const handleCancelName = () => {
     setNameInput(displayName);
     setIsEditingName(false);
+  };
+
+  const applyProfile = useCallback((profileKey) => {
+    const profileHosts = HOST_PROFILES[profileKey] || DEFAULT_HOSTS;
+    const nextHosts = profileHosts.map((host, index) => ({
+      ...host,
+      id: host.type === 'custom' ? `${Date.now()}-${index}` : host.id,
+      pinned: false,
+      paused: false,
+    }));
+    setAllHosts(nextHosts);
+    setActiveProfile(profileKey);
+    localStorage.setItem('allHosts', JSON.stringify(nextHosts));
+    addLogEntry({
+      type: 'action',
+      title: 'Profile applied',
+      detail: profileKey,
+    });
+  }, [addLogEntry, setAllHosts]);
+
+  const handleFirstRunProfile = (profileKey) => {
+    applyProfile(profileKey);
+    localStorage.setItem('firstRunSetupDone', 'true');
+    setFirstRunOpen(false);
   };
 
   const sanitizeDomain = (input) => {
@@ -1281,6 +1454,12 @@ const App = () => {
     setDnsManagerLoading(true);
     setDnsManagerStatus('');
     try {
+      const backup = dnsAdapters.find((item) => item.name === dnsSelectedAdapter);
+      if (backup) {
+        const nextBackup = { adapterName: backup.name, dns: backup.dns || [] };
+        setLastDnsBackup(nextBackup);
+        localStorage.setItem('lastDnsBackup', JSON.stringify(nextBackup));
+      }
       const result = await invoke('set_adapter_dns', {
         adapterName: dnsSelectedAdapter,
         primaryDns: dnsPrimaryInput.trim(),
@@ -1299,6 +1478,83 @@ const App = () => {
       }
     } catch (error) {
       console.error('Failed to apply system dns:', error);
+      setDnsManagerStatus(texts.dnsManagerFailed);
+    } finally {
+      setDnsManagerLoading(false);
+    }
+  };
+
+  const handleApplyRecommendedDns = async () => {
+    if (!dnsRecommendation?.primary) {
+      setDnsManagerStatus(texts.dnsRecommendationEmpty);
+      return;
+    }
+    if (!dnsSelectedAdapter) {
+      setDnsToolMode('manager');
+      setDnsManagerStatus(texts.dnsManagerNoAdapters);
+      return;
+    }
+    setDnsPrimaryInput(dnsRecommendation.primary.server);
+    setDnsSecondaryInput(dnsRecommendation.secondary?.server || '');
+    setDnsManagerLoading(true);
+    setDnsManagerStatus('');
+    try {
+      const backup = dnsAdapters.find((item) => item.name === dnsSelectedAdapter);
+      if (backup) {
+        const nextBackup = { adapterName: backup.name, dns: backup.dns || [] };
+        setLastDnsBackup(nextBackup);
+        localStorage.setItem('lastDnsBackup', JSON.stringify(nextBackup));
+      }
+      const result = await invoke('set_adapter_dns', {
+        adapterName: dnsSelectedAdapter,
+        primaryDns: dnsRecommendation.primary.server,
+        secondaryDns: dnsRecommendation.secondary?.server || null,
+      });
+      if (result && result.success) {
+        setDnsManagerStatus(texts.dnsManagerApplied);
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsResult,
+          detail: `${dnsSelectedAdapter} • ${dnsRecommendation.primary.server}${dnsRecommendation.secondary ? `, ${dnsRecommendation.secondary.server}` : ''}`,
+        });
+        await loadDnsAdapters(true);
+      } else {
+        setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
+      }
+    } catch (error) {
+      console.error('Failed to apply recommended dns:', error);
+      setDnsManagerStatus(texts.dnsManagerFailed);
+    } finally {
+      setDnsManagerLoading(false);
+    }
+  };
+
+  const handleRollbackDns = async () => {
+    if (!lastDnsBackup?.adapterName) return;
+    setDnsSelectedAdapter(lastDnsBackup.adapterName);
+    setDnsManagerLoading(true);
+    setDnsManagerStatus('');
+    try {
+      let result;
+      if (lastDnsBackup.dns?.[0]) {
+        result = await invoke('set_adapter_dns', {
+          adapterName: lastDnsBackup.adapterName,
+          primaryDns: lastDnsBackup.dns[0],
+          secondaryDns: lastDnsBackup.dns[1] || null,
+        });
+      } else {
+        result = await invoke('reset_adapter_dns', { adapterName: lastDnsBackup.adapterName });
+      }
+      if (result && result.success) {
+        setDnsManagerStatus(texts.dnsRollbackDone);
+        localStorage.removeItem('lastDnsBackup');
+        setLastDnsBackup(null);
+        await loadDnsAdapters(true);
+      } else {
+        setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
+      }
+    } catch (error) {
+      console.error('Failed to rollback dns:', error);
       setDnsManagerStatus(texts.dnsManagerFailed);
     } finally {
       setDnsManagerLoading(false);
@@ -1356,7 +1612,7 @@ const App = () => {
           addLogEntry({
             type: 'speed',
             title: texts.logSpeedComplete,
-            detail: `${result.downloadMbps} Mbps ? • ${result.uploadMbps} Mbps ? • ${result.latencyMs} ms${countryPart}`,
+            detail: `${texts.speedDownload}: ${result.downloadMbps} Mbps • ${texts.speedUpload}: ${result.uploadMbps} Mbps • ${texts.speedLatency}: ${result.latencyMs} ms${countryPart}`,
           });
           return;
         }
@@ -1386,12 +1642,12 @@ const App = () => {
   const handleToggleAutoLaunch = async () => {
     const next = !autoLaunch;
     setAutoLaunch(next);
-    localStorage.setItem('autoLaunch', String(next));
     try {
       const updated = await invoke('set_auto_launch', { enabled: next });
       setAutoLaunch(Boolean(updated));
     } catch (error) {
       console.error('Failed to update auto-launch:', error);
+      setAutoLaunch(!next);
     }
   };
 
@@ -1532,6 +1788,28 @@ const App = () => {
   const topFastestDns = dnsBenchmarkStats
     .filter((item) => Number.isFinite(item.averageMs))
     .slice(0, 3);
+
+  const dnsRecommendation = useMemo(() => {
+    const source = dnsBenchmarkStats.length
+      ? dnsBenchmarkStats
+      : dnsResults.map((item) => ({
+          server: item.server,
+          averageMs: item.status ? Number(item.responseTimeMs) : Number.POSITIVE_INFINITY,
+          successRate: item.status ? 100 : 0,
+        }));
+    const usable = source
+      .filter((item) => Number.isFinite(item.averageMs) && item.successRate >= 80)
+      .sort((a, b) => a.averageMs - b.averageMs);
+    if (!usable.length) return null;
+    return {
+      primary: usable[0],
+      secondary: usable.find((item) => item.server !== usable[0].server) || null,
+    };
+  }, [dnsBenchmarkStats, dnsResults]);
+
+  const selectedAdapterDetails = useMemo(() => {
+    return dnsAdapters.find((adapter) => adapter.name === dnsSelectedAdapter) || null;
+  }, [dnsAdapters, dnsSelectedAdapter]);
 
   const getInitials = (name) => {
     const trimmed = name.trim();
@@ -1829,10 +2107,23 @@ const App = () => {
       logSpeed: 'Speed Test',
       logAlerts: 'Alerts',
       logDns: 'DNS',
+      logNetwork: 'Network',
+      logAction: 'Action',
+      logSearch: 'Search logs...',
+      logDateAll: 'All dates',
+      logDateToday: 'Last 24h',
+      logDateWeek: 'Last 7 days',
       logExportJson: 'Export JSON',
       logExportCsv: 'Export CSV',
       logEmpty: 'No logs yet.',
       logClear: 'Clear logs',
+      logOverview: 'Log overview',
+      logControls: 'Filters and export',
+      logTimeline: 'Event timeline',
+      logTotal: 'Total logs',
+      logFiltered: 'Visible',
+      logLatest: 'Latest event',
+      logNoLatest: 'No event recorded',
       logSpeedComplete: 'Speed test completed',
       logDnsResult: 'DNS test result',
       logDnsFailed: 'DNS test failed',
@@ -1840,13 +2131,26 @@ const App = () => {
       logDomainBatch: 'Domain batch check',
       logPingAlert: 'Ping alert',
       logPingHighLatency: 'High latency',
+      logPacketLoss: 'Packet loss',
+      logIpChanged: 'Public IP changed',
+      logProfileApplied: 'Profile applied',
       settingsGeneral: 'General',
+      settingsMonitoring: 'Monitoring',
+      settingsUpdates: 'Updates',
       settingsAutoLaunch: 'Auto launch',
       settingsAutoLaunchHint: 'Start app when Windows boots',
       settingsPingInterval: 'Ping interval (ms)',
       settingsPingIntervalHint: 'How often pings refresh',
       settingsOptimization: 'Optimization',
       settingsOptimizationHint: 'Disable sparkline to reduce CPU usage',
+      settingsCompactMode: 'Compact mode',
+      settingsCompactModeHint: 'Show denser cards and controls',
+      settingsBackup: 'Settings backup',
+      settingsBackupHint: 'Export or import hosts, DNS tools, and preferences',
+      settingsExport: 'Export',
+      settingsImport: 'Import',
+      settingsImportDone: 'Settings imported',
+      settingsImportFailed: 'Settings import failed',
       settingsUpdateTitle: 'Check Update Now',
       settingsUpdateHint: 'Compare your version with GitHub',
       settingsUpdateButton: 'Check',
@@ -1865,7 +2169,13 @@ const App = () => {
       closeActionHide: 'Hide',
       closeActionExit: 'Exit',
       closeActionAsk: 'Ask every time',
+      closeModalTitle: 'Hide or Exit the application',
+      closeModalRemember: 'Remember my choice',
+      adminNoticeTitle: 'Run PulseNet as administrator',
+      adminNoticeBody: 'This application uses ICMP to receive ping responses from servers, so it needs administrator privileges.',
+      adminNoticeOk: 'OK',
       monitoring: 'Monitoring',
+      about: 'About',
       add: 'Add',
       edit: 'Edit',
       publicIpLabel: 'Public IP',
@@ -1894,6 +2204,18 @@ const App = () => {
       statusUnknown: 'Unknown',
       hostNameShortPlaceholder: 'Host name',
       hostIpShortPlaceholder: 'IP address or domain',
+      packetLoss: 'Loss',
+      profiles: 'Profiles',
+      profileGaming: 'Gaming',
+      profileGamingHint: 'Low latency targets for games and voice',
+      profileWork: 'Work',
+      profileWorkHint: 'Developer and productivity endpoints',
+      profileStreaming: 'Streaming',
+      profileStreamingHint: 'Video and media services',
+      profileIran: 'Iran',
+      profileIranHint: 'Local services and domestic checks',
+      firstRunTitle: 'Choose a monitoring profile',
+      firstRunSkip: 'Skip for now',
       dnsPlaceholder: 'example.com',
       dnsTest: 'Test DNS',
       dnsTesting: 'Testing...',
@@ -1943,6 +2265,15 @@ const App = () => {
       dnsManagerApplied: 'DNS updated successfully',
       dnsManagerResetDone: 'DNS reset to automatic',
       dnsManagerFailed: 'Failed to update DNS',
+      dnsRecommendation: 'Recommended DNS',
+      dnsApplyRecommended: 'Apply recommended DNS',
+      dnsRecommendationEmpty: 'Run a DNS test or benchmark first',
+      dnsRollback: 'Rollback DNS',
+      dnsRollbackDone: 'DNS rollback completed',
+      adapterCurrentDns: 'Current DNS',
+      adapterIpv4: 'IPv4',
+      adapterGateway: 'Gateway',
+      adapterStatus: 'Status',
       usable: 'Usable',
       blocked: 'Blocked',
       failed: 'failed',
@@ -1959,7 +2290,18 @@ const App = () => {
       speedProviderTitle: 'Provider',
       speedProviderCloudflare: 'Cloudflare',
       speedProviderHetzner: 'Hetzner',
+      speedOverview: 'Connection overview',
+      speedPublicIp: 'Public IP',
+      speedQuality: 'Quality',
+      speedQualityReady: 'Not tested',
+      speedQualityGreat: 'Great',
+      speedQualityStable: 'Stable',
+      speedQualityUnstable: 'Unstable',
       speedNote: 'Note: If you use IP-changing tools, enable the Tunnel option in the tool settings to show updates.',
+      aboutProductLabel: 'Product',
+      aboutVersionLabel: 'Version',
+      aboutDeveloperLabel: 'Developer',
+      aboutContactLabel: 'Contact',
       aboutDevTitle: 'Web Application Developer',
       aboutDevLine1: 'This web application was designed and developed by',
       aboutDevLine2: 'For contact and to see other projects, visit the link below:',
@@ -1982,10 +2324,23 @@ const App = () => {
       logSpeed: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
       logAlerts: '\u0647\u0634\u062f\u0627\u0631\u0647\u0627',
       logDns: 'DNS',
+      logNetwork: '\u0634\u0628\u06a9\u0647',
+      logAction: '\u0627\u0642\u062f\u0627\u0645',
+      logSearch: '\u062c\u0633\u062a\u062c\u0648\u06cc \u0644\u0627\u06af...',
+      logDateAll: '\u0647\u0645\u0647 \u062a\u0627\u0631\u06cc\u062e\u200c\u0647\u0627',
+      logDateToday: '\u06f2\u06f4 \u0633\u0627\u0639\u062a \u0627\u062e\u06cc\u0631',
+      logDateWeek: '\u06f7 \u0631\u0648\u0632 \u0627\u062e\u06cc\u0631',
       logExportJson: '\u062e\u0631\u0648\u062c\u06cc JSON',
       logExportCsv: '\u062e\u0631\u0648\u062c\u06cc CSV',
       logEmpty: '\u0647\u0646\u0648\u0632 \u0644\u0627\u06af\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647 \u0627\u0633\u062a.',
       logClear: '\u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646 \u0644\u0627\u06af\u200c\u0647\u0627',
+      logOverview: '\u062e\u0644\u0627\u0635\u0647 \u0644\u0627\u06af',
+      logControls: '\u0641\u06cc\u0644\u062a\u0631 \u0648 \u062e\u0631\u0648\u062c\u06cc',
+      logTimeline: '\u062e\u0637 \u0632\u0645\u0627\u0646 \u0631\u0648\u06cc\u062f\u0627\u062f\u0647\u0627',
+      logTotal: '\u06a9\u0644 \u0644\u0627\u06af\u200c\u0647\u0627',
+      logFiltered: '\u0646\u0645\u0627\u06cc\u0634\u200c\u062f\u0627\u062f\u0647 \u0634\u062f\u0647',
+      logLatest: '\u0622\u062e\u0631\u06cc\u0646 \u0631\u0648\u06cc\u062f\u0627\u062f',
+      logNoLatest: '\u0631\u0648\u06cc\u062f\u0627\u062f\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647',
       logSpeedComplete: '\u067e\u0627\u06cc\u0627\u0646 \u062a\u0633\u062a \u0633\u0631\u0639\u062a',
       logDnsResult: '\u0646\u062a\u06cc\u062c\u0647 \u062a\u0633\u062a DNS',
       logDnsFailed: '\u062e\u0637\u0627 \u062f\u0631 \u062a\u0633\u062a DNS',
@@ -1993,13 +2348,26 @@ const App = () => {
       logDomainBatch: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc \u062f\u0627\u0645\u0646\u0647',
       logPingAlert: '\u0647\u0634\u062f\u0627\u0631 \u067e\u06cc\u0646\u06af',
       logPingHighLatency: '\u062a\u0627\u062e\u06cc\u0631 \u0628\u0627\u0644\u0627',
+      logPacketLoss: '\u0627\u0641\u062a \u067e\u06a9\u062a',
+      logIpChanged: '\u062a\u063a\u06cc\u06cc\u0631 \u0622\u06cc\u200c\u067e\u06cc \u0639\u0645\u0648\u0645\u06cc',
+      logProfileApplied: '\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0627\u0639\u0645\u0627\u0644 \u0634\u062f',
       settingsGeneral: '\u0639\u0645\u0648\u0645\u06cc',
+      settingsMonitoring: '\u067e\u0627\u06cc\u0634',
+      settingsUpdates: '\u0622\u067e\u062f\u06cc\u062a\u200c\u0647\u0627',
       settingsAutoLaunch: '\u0627\u062c\u0631\u0627\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631',
       settingsAutoLaunchHint: '\u0628\u0627 \u0631\u0648\u0634\u0646 \u0634\u062f\u0646 \u0648\u06cc\u0646\u062f\u0648\u0632 \u0627\u062c\u0631\u0627 \u0634\u0648\u062f',
       settingsPingInterval: '\u0628\u0627\u0632\u0647 \u067e\u06cc\u0646\u06af (\u0645\u06cc\u0644\u06cc \u062b\u0627\u0646\u06cc\u0647)',
       settingsPingIntervalHint: '\u0641\u0627\u0635\u0644\u0647 \u0628\u0647 \u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u067e\u06cc\u0646\u06af',
-      settingsOptimization: '????? ????',
+      settingsOptimization: '\u0628\u0647\u06cc\u0646\u0647\u200c\u0633\u0627\u0632\u06cc',
       settingsOptimizationHint: '\u0628\u0631\u0627\u06cc \u06a9\u0627\u0647\u0634 \u0645\u0635\u0631\u0641 CPU \u0646\u0645\u0648\u062f\u0627\u0631 \u062e\u0637\u06cc \u062e\u0627\u0645\u0648\u0634 \u0645\u06cc\u200c\u0634\u0648\u062f',
+      settingsCompactMode: '\u062d\u0627\u0644\u062a \u0641\u0634\u0631\u062f\u0647',
+      settingsCompactModeHint: '\u06a9\u0627\u0631\u062a\u200c\u0647\u0627 \u0648 \u0627\u0628\u0632\u0627\u0631\u0647\u0627 \u0641\u0634\u0631\u062f\u0647\u200c\u062a\u0631 \u0646\u0645\u0627\u06cc\u0634 \u062f\u0627\u062f\u0647 \u0645\u06cc\u200c\u0634\u0648\u0646\u062f',
+      settingsBackup: '\u067e\u0634\u062a\u06cc\u0628\u0627\u0646 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a',
+      settingsBackupHint: '\u0645\u06cc\u0632\u0628\u0627\u0646\u200c\u0647\u0627\u060c DNS \u0648 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0631\u0627 \u062e\u0631\u0648\u062c\u06cc \u06cc\u0627 \u0648\u0631\u0648\u062f\u06cc \u0628\u06af\u06cc\u0631',
+      settingsExport: '\u062e\u0631\u0648\u062c\u06cc',
+      settingsImport: '\u0648\u0631\u0648\u062f\u06cc',
+      settingsImportDone: '\u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0648\u0627\u0631\u062f \u0634\u062f',
+      settingsImportFailed: '\u0648\u0631\u0648\u062f \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
       settingsUpdateTitle: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a',
       settingsUpdateHint: '\u0645\u0642\u0627\u06cc\u0633\u0647 \u0648\u0631\u0698\u0646 \u0628\u0627 \u06af\u06cc\u062a \u0647\u0627\u0628',
       settingsUpdateButton: '\u0628\u0631\u0631\u0633\u06cc',
@@ -2018,7 +2386,13 @@ const App = () => {
       closeActionHide: '\u067e\u0646\u0647\u0627\u0646 \u06a9\u0631\u062f\u0646',
       closeActionExit: '\u062e\u0631\u0648\u062c',
       closeActionAsk: '\u0647\u0631 \u0628\u0627\u0631 \u0628\u067e\u0631\u0633',
-      monitoring: 'Monitoring',
+      closeModalTitle: '\u0628\u0631\u0646\u0627\u0645\u0647 \u067e\u0646\u0647\u0627\u0646 \u0634\u0648\u062f \u06cc\u0627 \u0628\u0633\u062a\u0647 \u0634\u0648\u062f\u061f',
+      closeModalRemember: '\u0627\u0646\u062a\u062e\u0627\u0628 \u0645\u0646 \u0631\u0627 \u0628\u0647 \u062e\u0627\u0637\u0631 \u0628\u0633\u067e\u0627\u0631',
+      adminNoticeTitle: '\u0627\u062c\u0631\u0627\u06cc PulseNet \u0628\u0627 \u062f\u0633\u062a\u0631\u0633\u06cc \u0645\u062f\u06cc\u0631',
+      adminNoticeBody: '\u0627\u06cc\u0646 \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0631\u0627\u06cc \u062f\u0631\u06cc\u0627\u0641\u062a \u067e\u0627\u0633\u062e \u067e\u06cc\u0646\u06af \u0627\u0632 \u0633\u0631\u0648\u0631\u0647\u0627 \u0627\u0632 ICMP \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0645\u06cc\u200c\u06a9\u0646\u062f\u061b \u0628\u0646\u0627\u0628\u0631\u0627\u06cc\u0646 \u0628\u0647 \u062f\u0633\u062a\u0631\u0633\u06cc \u0645\u062f\u06cc\u0631 \u0646\u06cc\u0627\u0632 \u062f\u0627\u0631\u062f.',
+      adminNoticeOk: '\u0645\u062a\u0648\u062c\u0647 \u0634\u062f\u0645',
+      monitoring: '\u067e\u0627\u06cc\u0634',
+      about: '\u062f\u0631\u0628\u0627\u0631\u0647',
       add: '\u0627\u0641\u0632\u0648\u062f\u0646',
       edit: '\u0648\u06cc\u0631\u0627\u06cc\u0634',
       publicIpLabel: '\u0622\u06cc\u200c\u067e\u06cc \u0639\u0645\u0648\u0645\u06cc',
@@ -2047,6 +2421,18 @@ const App = () => {
       statusUnknown: '\u0646\u0627\u0645\u0634\u062e\u0635',
       hostNameShortPlaceholder: '\u0646\u0627\u0645 \u0645\u06cc\u0632\u0628\u0627\u0646',
       hostIpShortPlaceholder: '\u0622\u062f\u0631\u0633 IP \u06cc\u0627 \u062f\u0627\u0645\u0646\u0647',
+      packetLoss: '\u0627\u0641\u062a',
+      profiles: '\u067e\u0631\u0648\u0641\u0627\u06cc\u0644\u200c\u0647\u0627',
+      profileGaming: '\u0628\u0627\u0632\u06cc',
+      profileGamingHint: '\u0645\u0642\u0635\u062f\u0647\u0627\u06cc \u06a9\u0645\u200c\u062a\u0627\u062e\u06cc\u0631 \u0628\u0631\u0627\u06cc \u0628\u0627\u0632\u06cc \u0648 \u0648\u06cc\u0633',
+      profileWork: '\u06a9\u0627\u0631',
+      profileWorkHint: '\u0633\u0631\u0648\u06cc\u0633\u200c\u0647\u0627\u06cc \u062a\u0648\u0633\u0639\u0647 \u0648 \u0628\u0647\u0631\u0647\u200c\u0648\u0631\u06cc',
+      profileStreaming: '\u0627\u0633\u062a\u0631\u06cc\u0645',
+      profileStreamingHint: '\u0633\u0631\u0648\u06cc\u0633\u200c\u0647\u0627\u06cc \u0648\u06cc\u062f\u06cc\u0648 \u0648 \u0631\u0633\u0627\u0646\u0647',
+      profileIran: '\u0627\u06cc\u0631\u0627\u0646',
+      profileIranHint: '\u0633\u0631\u0648\u06cc\u0633\u200c\u0647\u0627\u06cc \u062f\u0627\u062e\u0644\u06cc \u0648 \u062a\u0633\u062a \u0645\u062d\u0644\u06cc',
+      firstRunTitle: '\u06cc\u06a9 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u067e\u0627\u06cc\u0634 \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646\u06cc\u062f',
+      firstRunSkip: '\u0641\u0639\u0644\u0627 \u0631\u062f \u06a9\u0646',
       dnsPlaceholder: 'example.com',
       dnsTest: '\u062a\u0633\u062a DNS',
       dnsTesting: '\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a...',
@@ -2096,6 +2482,15 @@ const App = () => {
       dnsManagerApplied: 'DNS \u0628\u0627 \u0645\u0648\u0641\u0642\u06cc\u062a \u062a\u063a\u06cc\u06cc\u0631 \u06a9\u0631\u062f',
       dnsManagerResetDone: 'DNS \u0628\u0647 \u062d\u0627\u0644\u062a \u062e\u0648\u062f\u06a9\u0627\u0631 \u0628\u0631\u06af\u0634\u062a',
       dnsManagerFailed: '\u062a\u063a\u06cc\u06cc\u0631 DNS \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      dnsRecommendation: 'DNS \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc',
+      dnsApplyRecommended: '\u0627\u0639\u0645\u0627\u0644 DNS \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc',
+      dnsRecommendationEmpty: '\u0627\u0648\u0644 \u062a\u0633\u062a \u06cc\u0627 \u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS \u0631\u0627 \u0627\u062c\u0631\u0627 \u06a9\u0646\u06cc\u062f',
+      dnsRollback: '\u0628\u0627\u0632\u06af\u0631\u062f\u0627\u0646\u06cc DNS',
+      dnsRollbackDone: '\u0628\u0627\u0632\u06af\u0631\u062f\u0627\u0646\u06cc DNS \u0627\u0646\u062c\u0627\u0645 \u0634\u062f',
+      adapterCurrentDns: 'DNS \u0641\u0639\u0644\u06cc',
+      adapterIpv4: 'IPv4',
+      adapterGateway: '\u06af\u06cc\u062a\u200c\u0648\u06cc',
+      adapterStatus: '\u0648\u0636\u0639\u06cc\u062a',
       usable: '\u0642\u0627\u0628\u0644 \u0627\u0633\u062a\u0641\u0627\u062f\u0647',
       blocked: '\u0645\u0633\u062f\u0648\u062f \u0634\u062f\u0647',
       failed: '\u0646\u0627\u0645\u0648\u0641\u0642',
@@ -2112,7 +2507,18 @@ const App = () => {
       speedProviderTitle: '\u0633\u0631\u0648\u06cc\u0633',
       speedProviderCloudflare: 'Cloudflare',
       speedProviderHetzner: 'Hetzner',
+      speedOverview: '\u062e\u0644\u0627\u0635\u0647 \u0627\u062a\u0635\u0627\u0644',
+      speedPublicIp: '\u0622\u06cc\u200c\u067e\u06cc \u0639\u0645\u0648\u0645\u06cc',
+      speedQuality: '\u06a9\u06cc\u0641\u06cc\u062a',
+      speedQualityReady: '\u062a\u0633\u062a \u0646\u0634\u062f\u0647',
+      speedQualityGreat: '\u0639\u0627\u0644\u06cc',
+      speedQualityStable: '\u067e\u0627\u06cc\u062f\u0627\u0631',
+      speedQualityUnstable: '\u0646\u0627\u067e\u0627\u06cc\u062f\u0627\u0631',
       speedNote: '\u0646\u06a9\u062a\u0647 : \u0627\u06af\u0631 \u0627\u0632 \u0627\u0628\u0632\u0627\u0631 \u0647\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u0622\u06cc\u067e\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0645\u06cc\u06a9\u0646\u06cc\u062f \u0628\u0631\u0627\u06cc \u0646\u0645\u0627\u06cc\u0634 \u062a\u063a\u06cc\u06cc\u0631\u0627\u062a \u06af\u0632\u06cc\u0646\u0647 \u062a\u0648\u0646\u0644 \u0631\u0648 \u062f\u0631 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0627\u0628\u0632\u0627\u0631 \u0631\u0648\u0634\u0646 \u06a9\u0646\u06cc\u062f',
+      aboutProductLabel: '\u0645\u062d\u0635\u0648\u0644',
+      aboutVersionLabel: '\u0648\u0631\u0698\u0646',
+      aboutDeveloperLabel: '\u062a\u0648\u0633\u0639\u0647\u200c\u062f\u0647\u0646\u062f\u0647',
+      aboutContactLabel: '\u0627\u0631\u062a\u0628\u0627\u0637',
       aboutDevTitle: '\u062a\u0648\u0633\u0639\u0647\u200c\u062f\u0647\u0646\u062f\u0647 \u0648\u0628 \u0627\u067e\u0644\u06cc\u06a9\u06cc\u0634\u0646',
       aboutDevLine1: '\u0627\u06cc\u0646 \u0648\u0628 \u0627\u067e\u0644\u06cc\u06a9\u06cc\u0634\u0646 \u062a\u0648\u0633\u0637',
       aboutDevLine2: '\u0628\u0631\u0627\u06cc \u0627\u0631\u062a\u0628\u0627\u0637 \u0648 \u0645\u0634\u0627\u0647\u062f\u0647 \u067e\u0631\u0648\u0698\u0647\u200c\u0647\u0627\u06cc \u062f\u06cc\u06af\u0631\u060c \u0627\u0632 \u0644\u06cc\u0646\u06a9 \u0632\u06cc\u0631 \u062f\u06cc\u062f\u0646 \u06a9\u0646\u06cc\u062f:',
@@ -2162,28 +2568,63 @@ const App = () => {
     return texts.speedPhaseIdle;
   }, [speedPhase, texts]);
 
-  const pageTitle = useMemo(() => {
-    if (currentPage === 'dns') return 'DNS Checker';
-    if (currentPage === 'speed') return 'Speed Test';
-    if (currentPage === 'log') return 'Log';
-    if (currentPage === 'about') return 'About';
-    if (currentPage === 'settings') return 'Settings';
-    return 'PulseNet';
-  }, [currentPage]);
+  const speedQuality = useMemo(() => {
+    if (!speedMetrics) {
+      return { label: texts.speedQualityReady, tone: 'neutral' };
+    }
 
-  const filteredLogs = useMemo(() => {
-    if (logFilter === 'all') return logEntries;
-    return logEntries.filter((entry) => entry.type === logFilter);
-  }, [logEntries, logFilter]);
+    const latency = Number(speedMetrics.latencyMs);
+    const jitter = Number(speedMetrics.jitterMs);
+    if (Number.isFinite(latency) && Number.isFinite(jitter) && latency <= 60 && jitter <= 20) {
+      return { label: texts.speedQualityGreat, tone: 'good' };
+    }
+    if (Number.isFinite(latency) && Number.isFinite(jitter) && latency <= 130 && jitter <= 45) {
+      return { label: texts.speedQualityStable, tone: 'warning' };
+    }
+    return { label: texts.speedQualityUnstable, tone: 'bad' };
+  }, [speedMetrics, texts]);
+
+  const pageTitle = useMemo(() => {
+    if (currentPage === 'dns') return texts.dnsChecker;
+    if (currentPage === 'speed') return texts.speedTest;
+    if (currentPage === 'log') return texts.alerts;
+    if (currentPage === 'about') return texts.about;
+    if (currentPage === 'settings') return texts.settings;
+    return 'PulseNet';
+  }, [currentPage, texts]);
 
   useEffect(() => {
-    if (logEntries.some((entry) => entry.type === 'action')) {
-      setLogEntries((prev) => {
-        const next = prev.filter((entry) => entry.type !== 'action');
-        localStorage.setItem('logEntries', JSON.stringify(next));
-        return next;
-      });
-    }
+    const status = `${pageTitle} • IP ${publicNetworkInfo.ip || 'N/A'} ${publicNetworkInfo.country && publicNetworkInfo.country !== 'N/A' ? `(${publicNetworkInfo.country})` : ''}`;
+    invoke('set_tray_status', { status }).catch(() => {});
+  }, [pageTitle, publicNetworkInfo]);
+
+  const logFilterOptions = useMemo(() => ([
+    { value: 'all', label: texts.logAll },
+    { value: 'speed', label: texts.logSpeed },
+    { value: 'alert', label: texts.logAlerts },
+    { value: 'dns', label: texts.logDns },
+    { value: 'network', label: texts.logNetwork },
+    { value: 'action', label: texts.logAction },
+  ]), [texts]);
+
+  const getLogTypeLabel = useCallback((type) => (
+    logFilterOptions.find((option) => option.value === type)?.label || texts.logDns
+  ), [logFilterOptions, texts]);
+
+  const filteredLogs = useMemo(() => {
+    const now = Date.now();
+    const query = logSearch.trim().toLowerCase();
+    return logEntries.filter((entry) => {
+      if (logFilter !== 'all' && entry.type !== logFilter) return false;
+      if (logDateFilter === 'today' && now - Number(entry.time || 0) > 24 * 60 * 60 * 1000) return false;
+      if (logDateFilter === 'week' && now - Number(entry.time || 0) > 7 * 24 * 60 * 60 * 1000) return false;
+      if (!query) return true;
+      return [entry.title, entry.detail, entry.type].some((value) => String(value || '').toLowerCase().includes(query));
+    });
+  }, [logEntries, logFilter, logDateFilter, logSearch]);
+
+  useEffect(() => {
+    localStorage.setItem('logEntries', JSON.stringify(logEntries.slice(0, 200)));
   }, [logEntries]);
 
   const formatLogTime = useCallback((timestamp) => {
@@ -2193,6 +2634,16 @@ const App = () => {
       return '';
     }
   }, [isPersian]);
+
+  const logStats = useMemo(() => {
+    const latest = logEntries[0] || null;
+    return {
+      total: logEntries.length,
+      visible: filteredLogs.length,
+      latestTitle: latest ? latest.title : texts.logNoLatest,
+      latestTime: latest ? formatLogTime(latest.time) : '',
+    };
+  }, [filteredLogs.length, formatLogTime, logEntries, texts]);
 
   const downloadTextFile = useCallback((filename, content, mimeType) => {
     const blob = new Blob([content], { type: mimeType });
@@ -2236,6 +2687,68 @@ const App = () => {
     );
   };
 
+  const handleExportSettings = () => {
+    const payload = {
+      version: 1,
+      allHosts,
+      activeProfile,
+      pingIntervalMs,
+      optimizationEnabled,
+      compactMode,
+      customDnsServers,
+      dnsBenchmarkRounds,
+      speedProvider,
+      showPublicIp,
+      closeAction,
+      betaUpdates,
+      displayName,
+      locale: isPersian ? 'fa' : 'en',
+    };
+    downloadTextFile(`pulsenet-settings-${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+  };
+
+  const handleImportSettingsClick = () => {
+    importSettingsInputRef.current?.click();
+  };
+
+  const handleImportSettingsFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.version !== 1) throw new Error('invalid-settings');
+      if (Array.isArray(parsed.allHosts)) {
+        setAllHosts(parsed.allHosts);
+        localStorage.setItem('allHosts', JSON.stringify(parsed.allHosts));
+      }
+      if (parsed.activeProfile) setActiveProfile(parsed.activeProfile);
+      if (Number.isFinite(Number(parsed.pingIntervalMs))) setPingIntervalMs(Number(parsed.pingIntervalMs));
+      if (typeof parsed.optimizationEnabled === 'boolean') setOptimizationEnabled(parsed.optimizationEnabled);
+      if (typeof parsed.compactMode === 'boolean') setCompactMode(parsed.compactMode);
+      if (Array.isArray(parsed.customDnsServers)) setCustomDnsServers(parsed.customDnsServers.map((item) => String(item).trim()).filter(Boolean));
+      if (Number.isFinite(Number(parsed.dnsBenchmarkRounds))) setDnsBenchmarkRounds(Math.min(10, Math.max(1, Number(parsed.dnsBenchmarkRounds))));
+      if (parsed.speedProvider) setSpeedProvider(parsed.speedProvider);
+      if (typeof parsed.showPublicIp === 'boolean') setShowPublicIp(parsed.showPublicIp);
+      if (parsed.closeAction) setCloseAction(parsed.closeAction);
+      if (typeof parsed.betaUpdates === 'boolean') setBetaUpdates(parsed.betaUpdates);
+      if (parsed.displayName) {
+        setDisplayName(parsed.displayName);
+        setNameInput(parsed.displayName);
+        localStorage.setItem('displayName', parsed.displayName);
+      }
+      if (parsed.locale === 'fa' || parsed.locale === 'en') {
+        setIsPersian(parsed.locale === 'fa');
+        localStorage.setItem('locale', parsed.locale);
+      }
+      addLogEntry({ type: 'action', title: texts.settingsImportDone, detail: file.name });
+    } catch (error) {
+      console.error('Failed to import settings:', error);
+      addLogEntry({ type: 'alert', title: texts.settingsImportFailed, detail: file.name });
+    }
+  };
+
   const handleOpenDeveloperGithub = useCallback((event) => {
     event.preventDefault();
     open('https://github.com/SM8KE1');
@@ -2248,7 +2761,7 @@ const App = () => {
 
 
   return (
-    <div className={`app-shell ${isSortingHosts ? 'sorting-active' : ''}`}>
+    <div className={`app-shell ${isSortingHosts ? 'sorting-active' : ''} ${compactMode ? 'compact' : ''}`}>
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           <button
@@ -2266,14 +2779,14 @@ const App = () => {
                 {currentPage === 'ping'
                   ? texts.monitoring
                   : currentPage === 'dns'
-                    ? 'Checking DNS'
+                    ? texts.dnsChecker
                     : currentPage === 'speed'
-                      ? 'Speed Test'
+                      ? texts.speedTest
                       : currentPage === 'log'
-                        ? 'Log'
+                        ? texts.alerts
                         : currentPage === 'about'
-                          ? 'About'
-                          : 'Settings'}
+                          ? texts.about
+                          : texts.settings}
               </div>
             </div>
             <span className="sidebar-team-about-icon" aria-hidden="true">
@@ -2384,6 +2897,19 @@ const App = () => {
                 <div className="sidebar-user-version">v{appVersion}</div>
               )}
             </div>
+            <button
+              type="button"
+              className="sidebar-gift-button"
+              onClick={handleDonateClick}
+              aria-label="Open gift link"
+            >
+              <GiftIcon />
+            </button>
+            {showDonateNudge && (
+              <div className="sidebar-donate-nudge" role="status" aria-live="polite">
+                <span>{isPersian ? 'دونیت' : 'Donate'}</span>
+              </div>
+            )}
           </div>
         </div>
       </aside>
@@ -2463,6 +2989,19 @@ const App = () => {
                 </button>
               </div>
             </div>
+            <div className="profile-strip">
+              <span>{texts.profiles}</span>
+              {['gaming', 'work', 'streaming', 'iran'].map((profileKey) => (
+                <button
+                  key={profileKey}
+                  type="button"
+                  className={`profile-chip ${activeProfile === profileKey ? 'active' : ''}`}
+                  onClick={() => applyProfile(profileKey)}
+                >
+                  {texts[`profile${profileKey.charAt(0).toUpperCase()}${profileKey.slice(1)}`]}
+                </button>
+              ))}
+            </div>
             {isEditMode && <div className="reorder-hint">{texts.reorderHint}</div>}
 
             {/* All Hosts with dnd-kit drag and drop */}
@@ -2482,6 +3021,7 @@ const App = () => {
                 optimizationEnabled={optimizationEnabled}
                 onLog={addLogEntry}
                 pingAlertThresholdMs={pingAlertThresholdMs}
+                packetLossAlertThreshold={packetLossAlertThreshold}
               />
             )}
 
@@ -2521,6 +3061,7 @@ const App = () => {
                   optimizationEnabled={optimizationEnabled}
                   onLog={addLogEntry}
                   pingAlertThresholdMs={pingAlertThresholdMs}
+                  packetLossAlertThreshold={packetLossAlertThreshold}
                 />
               ))}
               </SortableContext>
@@ -2558,83 +3099,106 @@ const App = () => {
             </div>
             {dnsError && <div className="dns-error">{dnsError}</div>}
             {dnsToolMode === 'test' ? (
-              <>
-                <div className="dns-input-row">
-                  <input
-                    className="dns-input"
-                    placeholder={texts.dnsPlaceholder}
-                    value={dnsDomain}
-                    onChange={(e) => setDnsDomain(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleDnsTest()}
-                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
-                  />
-                  <button
-                    className="dns-button"
-                    onClick={handleDnsTest}
-                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
-                  >
-                    {dnsLoading ? texts.dnsTesting : texts.dnsTest}
-                  </button>
-                  <button
-                    className="dns-button secondary"
-                    onClick={handleDnsBenchmark}
-                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
-                  >
-                    {dnsBenchmarkLoading ? texts.dnsBenchmarking : texts.dnsBenchmark}
-                  </button>
-                  <div className="dns-rounds">
-                    <span>{texts.dnsBenchmarkRounds}</span>
+              <div className="dns-test-layout">
+                <div className="dns-panel dns-query-panel">
+                  <div className="dns-input-row">
                     <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={dnsBenchmarkRounds}
-                      onChange={handleBenchmarkRoundsChange}
+                      className="dns-input"
+                      placeholder={texts.dnsPlaceholder}
+                      value={dnsDomain}
+                      onChange={(e) => setDnsDomain(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleDnsTest()}
                       disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
                     />
-                  </div>
-                </div>
-                <div className="dns-custom-tools">
-                  <div className="dns-custom-title">{texts.dnsCustomTitle}</div>
-                  <div className="dns-custom-row">
-                    <input
-                      className="dns-input dns-custom-input"
-                      placeholder={texts.dnsCustomPlaceholder}
-                      value={customDnsInput}
-                      onChange={(event) => setCustomDnsInput(event.target.value)}
-                      onKeyDown={(event) => event.key === 'Enter' && handleAddCustomDns()}
-                      disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
-                    />
-                    <button
-                      className="dns-button dns-custom-add"
-                      onClick={handleAddCustomDns}
-                      disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
-                    >
-                      {texts.dnsAddServer}
-                    </button>
-                  </div>
-                  {customDnsServers.length === 0 ? (
-                    <div className="dns-custom-empty">{texts.dnsCustomEmpty}</div>
-                  ) : (
-                    <div className="dns-custom-list">
-                      {customDnsServers.map((server) => (
-                        <button
-                          key={`custom-dns-${server}`}
-                          type="button"
-                          className="dns-custom-chip"
-                          onClick={() => handleRemoveCustomDns(server)}
-                          title={texts.deleteTitle(server)}
-                        >
-                          <span>{server}</span>
-                          <span className="dns-custom-chip-x">x</span>
-                        </button>
-                      ))}
+                    <div className="dns-primary-actions">
+                      <button
+                        className="dns-button"
+                        onClick={handleDnsTest}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      >
+                        {dnsLoading ? texts.dnsTesting : texts.dnsTest}
+                      </button>
+                      <button
+                        className="dns-button secondary"
+                        onClick={handleDnsBenchmark}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      >
+                        {dnsBenchmarkLoading ? texts.dnsBenchmarking : texts.dnsBenchmark}
+                      </button>
                     </div>
-                  )}
+                    <div className="dns-rounds">
+                      <span>{texts.dnsBenchmarkRounds}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={dnsBenchmarkRounds}
+                        onChange={handleBenchmarkRoundsChange}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      />
+                    </div>
+                  </div>
+                  <div className="dns-custom-tools">
+                    <div className="dns-custom-title">{texts.dnsCustomTitle}</div>
+                    <div className="dns-custom-row">
+                      <input
+                        className="dns-input dns-custom-input"
+                        placeholder={texts.dnsCustomPlaceholder}
+                        value={customDnsInput}
+                        onChange={(event) => setCustomDnsInput(event.target.value)}
+                        onKeyDown={(event) => event.key === 'Enter' && handleAddCustomDns()}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      />
+                      <button
+                        className="dns-button dns-custom-add"
+                        onClick={handleAddCustomDns}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      >
+                        {texts.dnsAddServer}
+                      </button>
+                    </div>
+                    {customDnsServers.length === 0 ? (
+                      <div className="dns-custom-empty">{texts.dnsCustomEmpty}</div>
+                    ) : (
+                      <div className="dns-custom-list">
+                        {customDnsServers.map((server) => (
+                          <button
+                            key={`custom-dns-${server}`}
+                            type="button"
+                            className="dns-custom-chip"
+                            onClick={() => handleRemoveCustomDns(server)}
+                            title={texts.deleteTitle(server)}
+                          >
+                            <span>{server}</span>
+                            <span className="dns-custom-chip-x">x</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 {topFastestDns.length > 0 && (
-                  <div className="dns-benchmark">
+                  <div className="dns-panel dns-benchmark">
                     <div className="dns-benchmark-title">{texts.dnsTopFastest}</div>
+                    {dnsRecommendation && (
+                      <div className="dns-recommendation">
+                        <div>
+                          <strong>{texts.dnsRecommendation}</strong>
+                          <span>
+                            {dnsRecommendation.primary.server}
+                            {dnsRecommendation.secondary ? ` + ${dnsRecommendation.secondary.server}` : ''}
+                          </span>
+                        </div>
+                        <button
+                          className="dns-button secondary"
+                          type="button"
+                          onClick={handleApplyRecommendedDns}
+                          disabled={dnsManagerLoading}
+                        >
+                          {texts.dnsApplyRecommended}
+                        </button>
+                      </div>
+                    )}
                     <div className="dns-benchmark-grid">
                       {topFastestDns.map((item) => (
                         <div key={`bench-${item.server}`} className="dns-benchmark-card">
@@ -2651,7 +3215,7 @@ const App = () => {
                   </div>
                 )}
                 {(dnsResults.length > 0 || dnsLoading) && (
-                  <div className="dns-table-wrap">
+                  <div className="dns-panel dns-table-wrap">
                     <div className="dns-summary">
                       <span className="dns-summary-good">{texts.usable} ({usableDns.length})</span>
                       <span className="dns-summary-bad">{texts.blocked} ({blockedDns.length})</span>
@@ -2737,7 +3301,7 @@ const App = () => {
                     </div>
                   </div>
                 )}
-                <div className="dns-batch">
+                <div className="dns-panel dns-batch">
                   <div className="dns-batch-title">{texts.dnsBatchTitle}</div>
                   <textarea
                     className="dns-batch-input"
@@ -2772,106 +3336,143 @@ const App = () => {
                     </div>
                   )}
                 </div>
-              </>
+              </div>
             ) : (
               <div className="dns-manager">
-                <div className="dns-manager-title">{texts.dnsManagerTitle}</div>
-                <div className="dns-manager-row">
-                  <label>{texts.dnsManagerAdapter}</label>
-                  <div className="dns-manager-controls">
-                    <AppDropdown
-                      className="dns-manager-select"
-                      value={dnsSelectedAdapter}
-                      onChange={(selected) => {
-                        setDnsSelectedAdapter(selected);
-                        const adapter = dnsAdapters.find((item) => item.name === selected);
-                        if (adapter) {
-                          setDnsPrimaryInput(adapter.dns?.[0] || '');
-                          setDnsSecondaryInput(adapter.dns?.[1] || '');
-                        }
-                      }}
-                      disabled={dnsManagerLoading || dnsAdapters.length === 0}
-                      options={
-                        dnsAdapters.length === 0
-                          ? [{ value: '', label: texts.dnsManagerNoAdapters }]
-                          : dnsAdapters.map((adapter) => ({
-                            value: adapter.name,
-                            label: adapter.name,
-                          }))
-                      }
-                      placeholder={texts.dnsManagerNoAdapters}
-                    />
-                    <button
-                      className="dns-button secondary dns-manager-refresh"
-                      onClick={() => loadDnsAdapters(true)}
-                      disabled={dnsManagerLoading}
-                    >
-                      {texts.dnsManagerRefresh}
-                    </button>
+                <div className="dns-manager-header">
+                  <div className="dns-manager-title">{texts.dnsManagerTitle}</div>
+                  <button
+                    className="dns-button secondary dns-manager-refresh"
+                    onClick={() => loadDnsAdapters(true)}
+                    disabled={dnsManagerLoading}
+                  >
+                    {texts.dnsManagerRefresh}
+                  </button>
+                </div>
+                <div className="dns-manager-layout">
+                  <div className="dns-manager-form">
+                    <div className="dns-manager-row">
+                      <label>{texts.dnsManagerAdapter}</label>
+                      <div className="dns-manager-controls">
+                        <AppDropdown
+                          className="dns-manager-select"
+                          value={dnsSelectedAdapter}
+                          onChange={(selected) => {
+                            setDnsSelectedAdapter(selected);
+                            const adapter = dnsAdapters.find((item) => item.name === selected);
+                            if (adapter) {
+                              setDnsPrimaryInput(adapter.dns?.[0] || '');
+                              setDnsSecondaryInput(adapter.dns?.[1] || '');
+                            }
+                          }}
+                          disabled={dnsManagerLoading || dnsAdapters.length === 0}
+                          options={
+                            dnsAdapters.length === 0
+                              ? [{ value: '', label: texts.dnsManagerNoAdapters }]
+                              : dnsAdapters.map((adapter) => ({
+                                value: adapter.name,
+                                label: adapter.name,
+                              }))
+                          }
+                          placeholder={texts.dnsManagerNoAdapters}
+                        />
+                      </div>
+                    </div>
+                    <div className="dns-manager-row">
+                      <label>{texts.dnsManagerPrimary}</label>
+                      <input
+                        className="dns-input dns-manager-input"
+                        value={dnsPrimaryInput}
+                        onChange={(event) => setDnsPrimaryInput(event.target.value)}
+                        disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                      />
+                    </div>
+                    <div className="dns-manager-row">
+                      <label>{texts.dnsManagerSecondary}</label>
+                      <input
+                        className="dns-input dns-manager-input"
+                        value={dnsSecondaryInput}
+                        onChange={(event) => setDnsSecondaryInput(event.target.value)}
+                        disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                      />
+                    </div>
+                    <div className="dns-manager-actions">
+                      <button
+                        className="dns-button"
+                        onClick={handleApplySystemDns}
+                        disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                      >
+                        {texts.dnsManagerApply}
+                      </button>
+                      <button
+                        className="dns-button secondary dns-manager-reset"
+                        onClick={handleResetSystemDns}
+                        disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                      >
+                        {texts.dnsManagerReset}
+                      </button>
+                    </div>
+                    {dnsManagerStatus && <div className="dns-manager-status">{dnsManagerStatus}</div>}
+                  </div>
+                  <div className="dns-manager-side">
+                    {selectedAdapterDetails && (
+                      <div className="adapter-details">
+                        <span>{texts.adapterCurrentDns}: {(selectedAdapterDetails.dns || []).join(', ') || 'DHCP'}</span>
+                        {selectedAdapterDetails.ipv4 && <span>{texts.adapterIpv4}: {selectedAdapterDetails.ipv4}</span>}
+                        {selectedAdapterDetails.gateway && <span>{texts.adapterGateway}: {selectedAdapterDetails.gateway}</span>}
+                        {selectedAdapterDetails.status && <span>{texts.adapterStatus}: {selectedAdapterDetails.status}</span>}
+                      </div>
+                    )}
+                    <div className="dns-manager-actions secondary-row">
+                      <button
+                        className="dns-button secondary"
+                        type="button"
+                        onClick={handleApplyRecommendedDns}
+                        disabled={dnsManagerLoading || !dnsRecommendation}
+                      >
+                        {texts.dnsApplyRecommended}
+                      </button>
+                      <button
+                        className="dns-button secondary dns-manager-reset"
+                        type="button"
+                        onClick={handleRollbackDns}
+                        disabled={dnsManagerLoading || !lastDnsBackup}
+                      >
+                        {texts.dnsRollback}
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="dns-manager-row">
-                  <label>{texts.dnsManagerPrimary}</label>
-                  <input
-                    className="dns-input dns-manager-input"
-                    value={dnsPrimaryInput}
-                    onChange={(event) => setDnsPrimaryInput(event.target.value)}
-                    disabled={dnsManagerLoading || !dnsSelectedAdapter}
-                  />
-                </div>
-                <div className="dns-manager-row">
-                  <label>{texts.dnsManagerSecondary}</label>
-                  <input
-                    className="dns-input dns-manager-input"
-                    value={dnsSecondaryInput}
-                    onChange={(event) => setDnsSecondaryInput(event.target.value)}
-                    disabled={dnsManagerLoading || !dnsSelectedAdapter}
-                  />
-                </div>
-                <div className="dns-manager-actions">
-                  <button
-                    className="dns-button"
-                    onClick={handleApplySystemDns}
-                    disabled={dnsManagerLoading || !dnsSelectedAdapter}
-                  >
-                    {texts.dnsManagerApply}
-                  </button>
-                  <button
-                    className="dns-button secondary dns-manager-reset"
-                    onClick={handleResetSystemDns}
-                    disabled={dnsManagerLoading || !dnsSelectedAdapter}
-                  >
-                    {texts.dnsManagerReset}
-                  </button>
-                </div>
-                {dnsManagerStatus && <div className="dns-manager-status">{dnsManagerStatus}</div>}
               </div>
             )}
           </div>
         ) : currentPage === 'speed' ? (
           <div className="speed-page">
-            <div className="speed-provider-switch">
-              <span className="speed-provider-label">{texts.speedProviderTitle}</span>
-              <div className="speed-provider-tabs">
-                <button
-                  className={`speed-provider-tab ${speedProvider === 'cloudflare' ? 'active' : ''}`}
-                  onClick={() => setSpeedProvider('cloudflare')}
-                  disabled={speedLoading}
-                >
-                  {texts.speedProviderCloudflare}
-                </button>
-                <button
-                  className={`speed-provider-tab ${speedProvider === 'hetzner' ? 'active' : ''}`}
-                  onClick={() => setSpeedProvider('hetzner')}
-                  disabled={speedLoading}
-                >
-                  {texts.speedProviderHetzner}
-                </button>
-              </div>
-            </div>
-            <div className={`speed-phase ${speedPhase}`}>{speedPhaseLabel}</div>
-            {(!speedStarted || speedLoading) ? (
-              <div className="speed-start">
+            <div className="speed-console">
+              <div className="speed-console-main">
+                <div className="speed-provider-switch">
+                  <span className="speed-provider-label">{texts.speedProviderTitle}</span>
+                  <div className="speed-provider-tabs">
+                    <button
+                      className={`speed-provider-tab ${speedProvider === 'cloudflare' ? 'active' : ''}`}
+                      onClick={() => setSpeedProvider('cloudflare')}
+                      disabled={speedLoading}
+                    >
+                      {texts.speedProviderCloudflare}
+                    </button>
+                    <button
+                      className={`speed-provider-tab ${speedProvider === 'hetzner' ? 'active' : ''}`}
+                      onClick={() => setSpeedProvider('hetzner')}
+                      disabled={speedLoading}
+                    >
+                      {texts.speedProviderHetzner}
+                    </button>
+                  </div>
+                </div>
+                <div className={`speed-phase ${speedPhase}`}>
+                  <span className="speed-phase-dot"></span>
+                  {speedPhaseLabel}
+                </div>
                 <button
                   className={`speed-play ${speedLoading ? 'loading' : ''}`}
                   onClick={speedLoading ? handleStopSpeed : handleStartSpeed}
@@ -2886,28 +3487,35 @@ const App = () => {
                   </span>
                 </button>
               </div>
-            ) : (
-              <div className={`speed-results ${speedLoading ? 'loading' : 'done'}`}>
-                <div className="speed-gauge">
-                  <div className="speed-ring"></div>
-                  <div className="speed-ring-fill"></div>
-                  <button
-                    className="speed-control speed-control-button"
-                    type="button"
-                    onClick={handleStartSpeed}
-                    aria-label="Start speed test"
-                  >
-                    <div className="speed-control-icon">
-                      {speedLoading ? <img src={pauseIcon} alt="" className="speed-control-icon-img" /> : <img src={playIcon} alt="" className="speed-control-icon-img" />}
-                    </div>
-                    <div className="speed-control-label">
-                      {speedLoading ? (texts.speedStop || 'Stop') : texts.speedStart}
-                    </div>
-                  </button>
+
+              <div className="speed-console-side">
+                <div className="speed-overview-head">
+                  <span>{texts.speedOverview}</span>
+                  <strong className={`speed-quality ${speedQuality.tone}`}>{speedQuality.label}</strong>
                 </div>
-                <div className="speed-info">
-                  <div className="speed-info-item single">
-                    <span>IP</span>
+                <div className="speed-primary-results">
+                  <div className="speed-primary-metric download">
+                    <span>{texts.speedDownload}</span>
+                    <strong>{speedMetrics ? speedMetrics.downloadMbps : '--'}</strong>
+                    <em>Mbps</em>
+                  </div>
+                  <div className="speed-primary-metric upload">
+                    <span>{texts.speedUpload}</span>
+                    <strong>{speedMetrics ? speedMetrics.uploadMbps : '--'}</strong>
+                    <em>Mbps</em>
+                  </div>
+                </div>
+                <div className="speed-details-grid">
+                  <div className="speed-detail">
+                    <span>{texts.speedLatency}</span>
+                    <strong>{speedMetrics ? speedMetrics.latencyMs : '--'} <em>ms</em></strong>
+                  </div>
+                  <div className="speed-detail">
+                    <span>{texts.speedJitter}</span>
+                    <strong>{speedMetrics ? speedMetrics.jitterMs : '--'} <em>ms</em></strong>
+                  </div>
+                  <div className="speed-detail wide">
+                    <span>{texts.speedPublicIp}</span>
                     <strong>
                       {speedMetrics && isIran(speedMetrics.country) ? (
                         <img src={iranFlag} alt="" className="speed-ip-flag-img" />
@@ -2917,30 +3525,12 @@ const App = () => {
                           aria-hidden="true"
                         ></span>
                       )}
-                      {speedMetrics ? speedMetrics.ip : 'N/A'}
+                      {speedMetrics ? speedMetrics.ip : '--'}
                     </strong>
                   </div>
                 </div>
-                <div className="speed-cards">
-                  <div className="speed-card">
-                    <div className="speed-card-title">{texts.speedUpload}</div>
-                    <div className="speed-card-value">{speedMetrics ? speedMetrics.uploadMbps : 'N/A'} <span>Mbps</span></div>
-                  </div>
-                  <div className="speed-card">
-                    <div className="speed-card-title">{texts.speedDownload}</div>
-                    <div className="speed-card-value">{speedMetrics ? speedMetrics.downloadMbps : 'N/A'} <span>Mbps</span></div>
-                  </div>
-                  <div className="speed-card">
-                    <div className="speed-card-title">{texts.speedJitter}</div>
-                    <div className="speed-card-value">{speedMetrics ? speedMetrics.jitterMs : 'N/A'} <span>Ms</span></div>
-                  </div>
-                  <div className="speed-card">
-                    <div className="speed-card-title">{texts.speedLatency}</div>
-                    <div className="speed-card-value">{speedMetrics ? speedMetrics.latencyMs : 'N/A'} <span>Ms</span></div>
-                  </div>
-                </div>
               </div>
-            )}
+            </div>
             <div className="speed-note">
               <div className="speed-note-title">
                 {speedProvider === 'hetzner' ? texts.speedProviderHetzner : texts.speedProviderCloudflare}
@@ -2950,176 +3540,277 @@ const App = () => {
           </div>
         ) : currentPage === 'log' ? (
           <div className="log-page">
-            <div className="log-header">
-              <div className="log-filters">
-              <button
-                className={`log-filter ${logFilter === 'all' ? 'active' : ''}`}
-                onClick={() => setLogFilter('all')}
-              >
-                {texts.logAll}
-              </button>
-              <button
-                className={`log-filter ${logFilter === 'speed' ? 'active' : ''}`}
-                onClick={() => setLogFilter('speed')}
-              >
-                {texts.logSpeed}
-              </button>
-              <button
-                className={`log-filter ${logFilter === 'alert' ? 'active' : ''}`}
-                onClick={() => setLogFilter('alert')}
-              >
-                {texts.logAlerts}
-              </button>
-              <button
-                className={`log-filter ${logFilter === 'dns' ? 'active' : ''}`}
-                onClick={() => setLogFilter('dns')}
-              >
-                {texts.logDns}
-              </button>
+            <div className="log-console">
+              <div className="log-overview-panel">
+                <div className="log-section-title">{texts.logOverview}</div>
+                <div className="log-stats">
+                  <div className="log-stat">
+                    <span>{texts.logTotal}</span>
+                    <strong>{logStats.total}</strong>
+                  </div>
+                  <div className="log-stat">
+                    <span>{texts.logFiltered}</span>
+                    <strong>{logStats.visible}</strong>
+                  </div>
+                  <div className="log-stat latest">
+                    <span>{texts.logLatest}</span>
+                    <strong>{logStats.latestTitle}</strong>
+                    {logStats.latestTime && <em>{logStats.latestTime}</em>}
+                  </div>
+                </div>
               </div>
-              <div className="log-actions">
-                <button className="log-clear" onClick={handleExportLogsJson} disabled={filteredLogs.length === 0}>
-                  {texts.logExportJson}
-                </button>
-                <button className="log-clear" onClick={handleExportLogsCsv} disabled={filteredLogs.length === 0}>
-                  {texts.logExportCsv}
-                </button>
-                <button className="log-clear danger" onClick={handleClearLogs} disabled={filteredLogs.length === 0}>
-                  {texts.logClear}
-                </button>
+
+              <div className="log-controls-panel">
+                <div className="log-section-title">{texts.logControls}</div>
+                <div className="log-filters">
+                  {logFilterOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      className={`log-filter ${logFilter === option.value ? 'active' : ''}`}
+                      onClick={() => setLogFilter(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="log-actions">
+                  <input
+                    className="log-search"
+                    value={logSearch}
+                    onChange={(event) => setLogSearch(event.target.value)}
+                    placeholder={texts.logSearch}
+                  />
+                  <AppDropdown
+                    className="log-date-filter"
+                    value={logDateFilter}
+                    onChange={setLogDateFilter}
+                    options={[
+                      { value: 'all', label: texts.logDateAll },
+                      { value: 'today', label: texts.logDateToday },
+                      { value: 'week', label: texts.logDateWeek },
+                    ]}
+                  />
+                  <button className="log-clear" onClick={handleExportLogsJson} disabled={filteredLogs.length === 0}>
+                    {texts.logExportJson}
+                  </button>
+                  <button className="log-clear" onClick={handleExportLogsCsv} disabled={filteredLogs.length === 0}>
+                    {texts.logExportCsv}
+                  </button>
+                  <button className="log-clear danger" onClick={handleClearLogs} disabled={filteredLogs.length === 0}>
+                    {texts.logClear}
+                  </button>
+                </div>
               </div>
             </div>
-            {filteredLogs.length === 0 ? (
-              <div className="log-empty">{texts.logEmpty}</div>
-            ) : (
-              <div className="log-list">
-                {filteredLogs.map((entry) => (
-                  <div key={entry.id} className={`log-item ${entry.type}`}>
-                    <div className="log-item-main">
-                      <div className="log-item-title">{entry.title}</div>
-                      <div className="log-item-detail">{entry.detail}</div>
-                    </div>
-                    <div className="log-item-meta">
-                      <span className={`log-badge ${entry.type}`}>
-                        {entry.type === 'speed'
-                          ? texts.logSpeed
-                          : entry.type === 'alert'
-                            ? texts.logAlerts
-                            : texts.logDns}
-                      </span>
-                      <span className="log-time">{formatLogTime(entry.time)}</span>
-                    </div>
-                  </div>
-                ))}
+
+            <div className="log-timeline-panel">
+              <div className="log-list-header">
+                <div className="log-section-title">{texts.logTimeline}</div>
+                <span className="log-visible-count">{logStats.visible}</span>
               </div>
-            )}
+              {filteredLogs.length === 0 ? (
+                <div className="log-empty">{texts.logEmpty}</div>
+              ) : (
+                <div className="log-list">
+                  {filteredLogs.map((entry) => (
+                    <div key={entry.id} className={`log-item ${entry.type}`}>
+                      <div className="log-item-main">
+                        <div className="log-item-title">{entry.title}</div>
+                        <div className="log-item-detail">{entry.detail}</div>
+                      </div>
+                      <div className="log-item-meta">
+                        <span className={`log-badge ${entry.type}`}>{getLogTypeLabel(entry.type)}</span>
+                        <span className="log-time">{formatLogTime(entry.time)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ) : currentPage === 'about' ? (
           <div className="about-page">
-            <div className={`developer-content ${isPersian ? 'rtl' : 'ltr'}`}>
-              <h4>{texts.aboutDevTitle}</h4>
-              <p>{texts.aboutDevLine1} <strong>Arash Bayat</strong>.</p>
-              <p>{texts.aboutDevLine2}</p>
-              <a
-                href="https://github.com/SM8KE1"
-                target="_blank"
-                rel="noreferrer"
-                className="github-link"
-                onClick={handleOpenDeveloperGithub}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                </svg>
-                {texts.aboutGithubLink}
-              </a>
+            <div className={`about-panel ${isPersian ? 'rtl' : 'ltr'}`}>
+              <div className="about-hero">
+                <div className="about-logo-mark">
+                  <img src={iconIco} alt="" />
+                </div>
+                <div className="about-hero-copy">
+                  <div className="about-kicker">PulseNet</div>
+                  <h2>{texts.aboutDevTitle}</h2>
+                  <p>{texts.aboutDevLine1} <strong>Arash Bayat</strong>.</p>
+                </div>
+              </div>
+              <div className="about-info-grid">
+                <div className="about-info-item">
+                  <span>{texts.aboutProductLabel}</span>
+                  <strong>PulseNet</strong>
+                </div>
+                <div className="about-info-item">
+                  <span>{texts.aboutVersionLabel}</span>
+                  <strong>{appVersion ? `v${appVersion}` : 'N/A'}</strong>
+                </div>
+                <div className="about-info-item">
+                  <span>{texts.aboutDeveloperLabel}</span>
+                  <strong>Arash Bayat</strong>
+                </div>
+                <div className="about-info-item">
+                  <span>{texts.aboutContactLabel}</span>
+                  <strong>GitHub</strong>
+                </div>
+              </div>
+              <div className="about-contact">
+                <p>{texts.aboutDevLine2}</p>
+                <a
+                  href="https://github.com/SM8KE1"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="github-link"
+                  onClick={handleOpenDeveloperGithub}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                  </svg>
+                  {texts.aboutGithubLink}
+                </a>
+              </div>
             </div>
           </div>
         ) : (
           <div className="settings-page">
-            <div className="settings-card">
-              <div className="settings-card-title">{texts.settingsGeneral}</div>
-              <div className="settings-item">
-                <div className="settings-label">
-                  <div className="settings-name">{texts.settingsAutoLaunch}</div>
-                  <div className="settings-hint">{texts.settingsAutoLaunchHint}</div>
+            <div className="settings-grid">
+              <div className="settings-card">
+                <div className="settings-card-title">{texts.settingsGeneral}</div>
+                <div className="settings-item">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.settingsAutoLaunch}</div>
+                    <div className="settings-hint">{texts.settingsAutoLaunchHint}</div>
+                  </div>
+                  <label className="settings-switch">
+                    <input
+                      type="checkbox"
+                      checked={autoLaunch}
+                      onChange={handleToggleAutoLaunch}
+                    />
+                    <span className="settings-slider"></span>
+                  </label>
                 </div>
-                <label className="settings-switch">
-                  <input
-                    type="checkbox"
-                    checked={autoLaunch}
-                    onChange={handleToggleAutoLaunch}
+                <div className="settings-item">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.closeActionTitle}</div>
+                    <div className="settings-hint">{texts.closeActionHint}</div>
+                  </div>
+                  <AppDropdown
+                    className="settings-select"
+                    value={closeAction}
+                    onChange={setCloseAction}
+                    options={[
+                      { value: 'hide', label: texts.closeActionHide },
+                      { value: 'exit', label: texts.closeActionExit },
+                      { value: 'ask', label: texts.closeActionAsk },
+                    ]}
                   />
-                  <span className="settings-slider"></span>
-                </label>
+                </div>
+                <div className="settings-item">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.settingsCompactMode}</div>
+                    <div className="settings-hint">{texts.settingsCompactModeHint}</div>
+                  </div>
+                  <label className="settings-switch">
+                    <input
+                      type="checkbox"
+                      checked={compactMode}
+                      onChange={(event) => setCompactMode(event.target.checked)}
+                    />
+                    <span className="settings-slider"></span>
+                  </label>
+                </div>
               </div>
-              <div className="settings-item">
-                <div className="settings-label">
-                  <div className="settings-name">{texts.settingsUpdateTitle}</div>
-                  <div className="settings-hint">
-                    {updateStatus || texts.settingsUpdateHint}
+
+              <div className="settings-card">
+                <div className="settings-card-title">{texts.settingsMonitoring}</div>
+                <div className="settings-item">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.settingsOptimization}</div>
+                    <div className="settings-hint">{texts.settingsOptimizationHint}</div>
+                  </div>
+                  <label className="settings-switch">
+                    <input
+                      type="checkbox"
+                      checked={optimizationEnabled}
+                      onChange={handleToggleOptimization}
+                    />
+                    <span className="settings-slider"></span>
+                  </label>
+                </div>
+                <div className="settings-item">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.settingsPingInterval}</div>
+                    <div className="settings-hint">{texts.settingsPingIntervalHint}</div>
+                  </div>
+                  <input
+                    className="settings-input"
+                    type="number"
+                    min="250"
+                    step="250"
+                    value={pingIntervalMs}
+                    onChange={handlePingIntervalChange}
+                  />
+                </div>
+              </div>
+
+              <div className="settings-card">
+                <div className="settings-card-title">{texts.settingsUpdates}</div>
+                <div className="settings-item">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.settingsUpdateTitle}</div>
+                    <div className="settings-hint">
+                      {updateStatus || texts.settingsUpdateHint}
+                    </div>
+                  </div>
+                  <button className="settings-button" onClick={handleCheckUpdates}>
+                    {texts.settingsUpdateButton}
+                  </button>
+                </div>
+                <div className="settings-item">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.settingsBetaUpdate}</div>
+                    <div className="settings-hint">{texts.settingsBetaUpdateHint}</div>
+                  </div>
+                  <label className="settings-switch">
+                    <input
+                      type="checkbox"
+                      checked={betaUpdates}
+                      onChange={(event) => setBetaUpdates(event.target.checked)}
+                    />
+                    <span className="settings-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="settings-card">
+                <div className="settings-card-title">{texts.settingsBackup}</div>
+                <div className="settings-item settings-item-stack">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.settingsBackup}</div>
+                    <div className="settings-hint">{texts.settingsBackupHint}</div>
+                  </div>
+                  <div className="settings-actions">
+                    <button className="settings-button" onClick={handleExportSettings}>
+                      {texts.settingsExport}
+                    </button>
+                    <button className="settings-button secondary" onClick={handleImportSettingsClick}>
+                      {texts.settingsImport}
+                    </button>
+                    <input
+                      ref={importSettingsInputRef}
+                      className="hidden-file-input"
+                      type="file"
+                      accept="application/json"
+                      onChange={handleImportSettingsFile}
+                    />
                   </div>
                 </div>
-                <button className="settings-button" onClick={handleCheckUpdates}>
-                  {texts.settingsUpdateButton}
-                </button>
-              </div>
-              <div className="settings-item">
-                <div className="settings-label">
-                  <div className="settings-name">{texts.settingsBetaUpdate}</div>
-                  <div className="settings-hint">{texts.settingsBetaUpdateHint}</div>
-                </div>
-                <label className="settings-switch">
-                  <input
-                    type="checkbox"
-                    checked={betaUpdates}
-                    onChange={(event) => setBetaUpdates(event.target.checked)}
-                  />
-                  <span className="settings-slider"></span>
-                </label>
-              </div>
-              <div className="settings-item">
-                <div className="settings-label">
-                  <div className="settings-name">{texts.closeActionTitle}</div>
-                  <div className="settings-hint">{texts.closeActionHint}</div>
-                </div>
-                <AppDropdown
-                  className="settings-select"
-                  value={closeAction}
-                  onChange={setCloseAction}
-                  options={[
-                    { value: 'hide', label: texts.closeActionHide },
-                    { value: 'exit', label: texts.closeActionExit },
-                    { value: 'ask', label: texts.closeActionAsk },
-                  ]}
-                />
-              </div>
-              <div className="settings-item">
-                <div className="settings-label">
-                  <div className="settings-name">{texts.settingsOptimization}</div>
-                  <div className="settings-hint">{texts.settingsOptimizationHint}</div>
-                </div>
-                <label className="settings-switch">
-                  <input
-                    type="checkbox"
-                    checked={optimizationEnabled}
-                    onChange={handleToggleOptimization}
-                  />
-                  <span className="settings-slider"></span>
-                </label>
-              </div>
-              <div className="settings-item">
-                <div className="settings-label">
-                  <div className="settings-name">{texts.settingsPingInterval}</div>
-                  <div className="settings-hint">{texts.settingsPingIntervalHint}</div>
-                </div>
-                <input
-                  className="settings-input"
-                  type="number"
-                  min="250"
-                  step="250"
-                  value={pingIntervalMs}
-                  onChange={handlePingIntervalChange}
-                />
               </div>
             </div>
             {updateModalOpen && (
@@ -3154,9 +3845,9 @@ const App = () => {
         <div className="close-modal">
           <div className="close-modal-backdrop" onClick={() => setCloseModalOpen(false)}></div>
           <div className="close-modal-card">
-            <div className="close-modal-title">?Hide or Exit the application</div>
+            <div className="close-modal-title">{texts.closeModalTitle}</div>
             <label className="close-modal-remember">
-              <span>Remember my choice</span>
+              <span>{texts.closeModalRemember}</span>
               <input
                 type="checkbox"
                 checked={closeRememberChoice}
@@ -3165,10 +3856,10 @@ const App = () => {
             </label>
             <div className="close-modal-actions">
               <button className="close-modal-button primary" onClick={() => handleCloseChoice('hide')}>
-                Hide
+                {texts.closeActionHide}
               </button>
               <button className="close-modal-button ghost" onClick={() => handleCloseChoice('exit')}>
-                Exit
+                {texts.closeActionExit}
               </button>
             </div>
           </div>
@@ -3178,12 +3869,43 @@ const App = () => {
         <div className="close-modal">
           <div className="close-modal-backdrop"></div>
           <div className="close-modal-card">
-            <div className="close-modal-title">
-              This application uses the ICMP protocol to receive ping responses from servers; therefore, it needs to be run with administrator privileges.
-            </div>
+            <div className="close-modal-title">{texts.adminNoticeTitle}</div>
+            <div className="close-modal-remember">{texts.adminNoticeBody}</div>
             <div className="close-modal-actions">
               <button className="close-modal-button primary" onClick={handleAdminNoticeClose}>
-                Okey
+                {texts.adminNoticeOk}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {firstRunOpen && !adminModalOpen && (
+        <div className="close-modal">
+          <div className="close-modal-backdrop"></div>
+          <div className="close-modal-card setup-card">
+            <div className="close-modal-title">{texts.firstRunTitle}</div>
+            <div className="setup-grid">
+              {['gaming', 'work', 'streaming', 'iran'].map((profileKey) => (
+                <button
+                  key={`setup-${profileKey}`}
+                  className="setup-profile"
+                  type="button"
+                  onClick={() => handleFirstRunProfile(profileKey)}
+                >
+                  <strong>{texts[`profile${profileKey.charAt(0).toUpperCase()}${profileKey.slice(1)}`]}</strong>
+                  <span>{texts[`profile${profileKey.charAt(0).toUpperCase()}${profileKey.slice(1)}Hint`]}</span>
+                </button>
+              ))}
+            </div>
+            <div className="close-modal-actions">
+              <button
+                className="close-modal-button ghost"
+                onClick={() => {
+                  localStorage.setItem('firstRunSetupDone', 'true');
+                  setFirstRunOpen(false);
+                }}
+              >
+                {texts.firstRunSkip}
               </button>
             </div>
           </div>
