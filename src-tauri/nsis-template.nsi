@@ -562,6 +562,10 @@ Section EarlyChecks
 SectionEnd
 
 Function UninstallPreviousMsiIfFound
+  ${If} ${RunningX64}
+    SetRegView 64
+  ${EndIf}
+
   StrCpy $R8 ""
   StrCpy $0 0
 
