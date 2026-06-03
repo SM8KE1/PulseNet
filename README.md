@@ -1,7 +1,7 @@
 # PulseNet
 
 PulseNet is a desktop network utility built with **Tauri + React**.
-It provides ping monitoring, DNS checking, speed testing, and logs in one lightweight app.
+It provides ping monitoring, DNS testing and management, speed testing, logs, and app settings in one lightweight app.
 
 [![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet/releases)
 [![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://github.com/SM8KE1/PulseNet/releases)
@@ -12,10 +12,21 @@ It provides ping monitoring, DNS checking, speed testing, and logs in one lightw
 
 ## Main Features
 
-- Ping Monitoring (real-time)
-- DNS Checker
-- Speed Test with provider switch (Cloudflare / Hetzner)
-- Log page
+- Real-time ping monitoring with profiles and public IP visibility controls
+- DNS Checker with single-domain tests, benchmark tools, custom DNS entries, and batch checks
+- System DNS Manager with current DNS detection, adapter filtering, DHCP reset, recommended DNS apply, and rollback support
+- Speed Test with provider switch (Cloudflare / Hetzner), quality summary, latency, jitter, and public IP details
+- Log page with filters, search, export, and summary cards
+- Settings and About pages with refreshed UI
+- Sidebar donation shortcut for `https://daramet.com/SM0KE`
+
+## Version 1.6.0
+
+- Refreshed DNS, Speed Test, Log, Settings, Ping, and About screens
+- Improved DNS adapter detection speed and filtering for internet-related physical adapters
+- Added a sidebar gift/donation button with a small in-app donation nudge
+- Fixed dev server path to use `http://127.0.0.1:5173`
+- Windows bundles are available as NSIS setup and MSI installer
 
 ## Install (Windows)
 
