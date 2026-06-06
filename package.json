@@ -1,6 +1,6 @@
 {
   "name": "pulsenet",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Ping Monitoring",
   "scripts": {
     "dev": "tauri dev",
