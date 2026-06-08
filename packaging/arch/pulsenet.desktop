@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PulseNet
+Comment=Network diagnostics and DNS manager
+Exec=pulsenet
+Icon=pulsenet
+Terminal=false
+Categories=Network;Utility;
+StartupWMClass=PulseNet

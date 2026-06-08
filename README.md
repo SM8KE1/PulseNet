@@ -34,6 +34,27 @@ It provides ping monitoring, DNS testing and management, speed testing, logs, an
    - `https://github.com/SM8KE1/PulseNet/releases`
 2. Run setup and finish installation.
 
+## Install (Linux)
+
+Use the package format that matches your distribution:
+
+- Ubuntu/Debian: use the `.deb` bundle
+- Fedora/openSUSE/RHEL: use the `.rpm` bundle
+- Arch/Manjaro/EndeavourOS: prefer the native package in `packaging/arch`
+- AppImage: fallback option for distributions without a native package path
+
+For Arch-based systems:
+
+```bash
+git clone https://github.com/SM8KE1/PulseNet.git
+cd PulseNet
+sudo pacman -S --needed base-devel git nodejs npm rust cargo gtk3 libayatana-appindicator librsvg networkmanager openssl polkit
+yay -S webkit2gtk
+cd packaging/arch
+makepkg -si
+pulsenet
+```
+
 ## Run as Administrator
 
 For reliable ICMP ping behavior on Windows, run PulseNet with administrator privileges.
@@ -42,6 +63,7 @@ For reliable ICMP ping behavior on Windows, run PulseNet with administrator priv
 
 Linux DNS Manager support uses NetworkManager through `nmcli`.
 For applying or resetting DNS, the system must allow NetworkManager changes through the active user session or Polkit/`pkexec`.
+On Arch-based systems, the native package launcher sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` by default to avoid common WebKitGTK EGL/DMABUF startup issues.
 
 ## Development
 

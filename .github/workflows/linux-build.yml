@@ -48,14 +48,32 @@ jobs:
       - name: Build Linux bundles
         run: npm run build
 
-      - name: Upload Linux artifacts
+      - name: Upload AppImage artifact
         uses: actions/upload-artifact@v5
         with:
-          name: pulsenet-linux
-          path: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
+          name: pulsenet-linux-appimage
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+      - name: Upload Debian artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: pulsenet-linux-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: pulsenet-linux-rpm
+          path: src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
+
+      - name: Upload Arch packaging
+        uses: actions/upload-artifact@v5
+        with:
+          name: pulsenet-linux-arch-packaging
+          path: packaging/arch/**
           if-no-files-found: error
 
       - name: Attach bundles to GitHub release
