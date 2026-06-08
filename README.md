@@ -1,3 +1,4 @@
+
 # PulseNet
 
 PulseNet is a desktop network utility built with **Tauri + React**.
@@ -6,7 +7,8 @@ It provides ping monitoring, DNS testing and management, speed testing, logs, an
 [![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet/releases)
 [![Version](https://img.shields.io/badge/version-1.6.1-blue)](https://github.com/SM8KE1/PulseNet/releases)
 
-<img width="1000" height="600" alt="Screenshot 2026-02-26 141744" src="https://github.com/user-attachments/assets/5de4fe13-b1c5-4029-8207-164e80ecdd3b" />
+<img width="1000" height="600" alt="Screenshot 2026-06-08 164748" src="https://github.com/user-attachments/assets/5c034c43-0ccd-453d-aa42-768ccf621cff" />
+
 
 
 
