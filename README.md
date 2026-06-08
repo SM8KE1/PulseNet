@@ -38,6 +38,11 @@ It provides ping monitoring, DNS testing and management, speed testing, logs, an
 
 For reliable ICMP ping behavior on Windows, run PulseNet with administrator privileges.
 
+## Linux Notes
+
+Linux DNS Manager support uses NetworkManager through `nmcli`.
+For applying or resetting DNS, the system must allow NetworkManager changes through the active user session or Polkit/`pkexec`.
+
 ## Development
 
 ### Prerequisites

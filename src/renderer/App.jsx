@@ -55,6 +55,9 @@ const DEFAULT_HOSTS = [
   { type: 'default', label: 'Time.ir', host: 'time.ir' },
   { type: 'default', label: 'YouTube', host: 'youtube.com' },
 ];
+
+const getDnsAdapterKey = (adapter) => adapter?.id || adapter?.name || '';
+
 const HOST_PROFILES = {
   gaming: [
     { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
@@ -1400,9 +1403,9 @@ const App = () => {
         return;
       }
       setDnsSelectedAdapter((current) => {
-        const exists = normalized.some((item) => item.name === current);
-        const selectedName = exists ? current : normalized[0].name;
-        const selected = normalized.find((item) => item.name === selectedName);
+        const exists = normalized.some((item) => getDnsAdapterKey(item) === current);
+        const selectedName = exists ? current : getDnsAdapterKey(normalized[0]);
+        const selected = normalized.find((item) => getDnsAdapterKey(item) === selectedName);
         if (selected) {
           setDnsPrimaryInput(selected.dns?.[0] || '');
           setDnsSecondaryInput(selected.dns?.[1] || '');
@@ -1427,9 +1430,10 @@ const App = () => {
     setDnsManagerLoading(true);
     setDnsManagerStatus('');
     try {
-      const backup = dnsAdapters.find((item) => item.name === dnsSelectedAdapter);
+      const backup = dnsAdapters.find((item) => getDnsAdapterKey(item) === dnsSelectedAdapter);
+      const adapterLabel = backup?.name || dnsSelectedAdapter;
       if (backup) {
-        const nextBackup = { adapterName: backup.name, dns: backup.dns || [] };
+        const nextBackup = { adapterName: getDnsAdapterKey(backup), adapterLabel: backup.name, dns: backup.dns || [] };
         setLastDnsBackup(nextBackup);
         localStorage.setItem('lastDnsBackup', JSON.stringify(nextBackup));
       }
@@ -1443,7 +1447,7 @@ const App = () => {
         addLogEntry({
           type: 'dns',
           title: texts.logDnsResult,
-          detail: `${dnsSelectedAdapter} • ${dnsPrimaryInput.trim()}${dnsSecondaryInput.trim() ? `, ${dnsSecondaryInput.trim()}` : ''}`,
+          detail: `${adapterLabel} • ${dnsPrimaryInput.trim()}${dnsSecondaryInput.trim() ? `, ${dnsSecondaryInput.trim()}` : ''}`,
         });
         await loadDnsAdapters(true);
       } else {
@@ -1472,9 +1476,10 @@ const App = () => {
     setDnsManagerLoading(true);
     setDnsManagerStatus('');
     try {
-      const backup = dnsAdapters.find((item) => item.name === dnsSelectedAdapter);
+      const backup = dnsAdapters.find((item) => getDnsAdapterKey(item) === dnsSelectedAdapter);
+      const adapterLabel = backup?.name || dnsSelectedAdapter;
       if (backup) {
-        const nextBackup = { adapterName: backup.name, dns: backup.dns || [] };
+        const nextBackup = { adapterName: getDnsAdapterKey(backup), adapterLabel: backup.name, dns: backup.dns || [] };
         setLastDnsBackup(nextBackup);
         localStorage.setItem('lastDnsBackup', JSON.stringify(nextBackup));
       }
@@ -1488,7 +1493,7 @@ const App = () => {
         addLogEntry({
           type: 'dns',
           title: texts.logDnsResult,
-          detail: `${dnsSelectedAdapter} • ${dnsRecommendation.primary.server}${dnsRecommendation.secondary ? `, ${dnsRecommendation.secondary.server}` : ''}`,
+          detail: `${adapterLabel} • ${dnsRecommendation.primary.server}${dnsRecommendation.secondary ? `, ${dnsRecommendation.secondary.server}` : ''}`,
         });
         await loadDnsAdapters(true);
       } else {
@@ -1542,10 +1547,11 @@ const App = () => {
       const result = await invoke('reset_adapter_dns', { adapterName: dnsSelectedAdapter });
       if (result && result.success) {
         setDnsManagerStatus(texts.dnsManagerResetDone);
+        const adapterLabel = selectedAdapterDetails?.name || dnsSelectedAdapter;
         addLogEntry({
           type: 'dns',
           title: texts.logDnsResult,
-          detail: `${dnsSelectedAdapter} • DHCP`,
+          detail: `${adapterLabel} • DHCP`,
         });
         await loadDnsAdapters(true);
       } else {
@@ -1781,7 +1787,7 @@ const App = () => {
   }, [dnsBenchmarkStats, dnsResults]);
 
   const selectedAdapterDetails = useMemo(() => {
-    return dnsAdapters.find((adapter) => adapter.name === dnsSelectedAdapter) || null;
+    return dnsAdapters.find((adapter) => getDnsAdapterKey(adapter) === dnsSelectedAdapter) || null;
   }, [dnsAdapters, dnsSelectedAdapter]);
 
   const getInitials = (name) => {
@@ -3346,7 +3352,7 @@ const App = () => {
                           value={dnsSelectedAdapter}
                           onChange={(selected) => {
                             setDnsSelectedAdapter(selected);
-                            const adapter = dnsAdapters.find((item) => item.name === selected);
+                            const adapter = dnsAdapters.find((item) => getDnsAdapterKey(item) === selected);
                             if (adapter) {
                               setDnsPrimaryInput(adapter.dns?.[0] || '');
                               setDnsSecondaryInput(adapter.dns?.[1] || '');
@@ -3357,7 +3363,7 @@ const App = () => {
                             dnsAdapters.length === 0
                               ? [{ value: '', label: texts.dnsManagerNoAdapters }]
                               : dnsAdapters.map((adapter) => ({
-                                value: adapter.name,
+                                value: getDnsAdapterKey(adapter),
                                 label: adapter.name,
                               }))
                           }

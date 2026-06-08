@@ -104,6 +104,7 @@ struct DnsResponse {
 
 #[derive(Serialize, Clone)]
 struct DnsAdapter {
+    id: String,
     name: String,
     dns: Vec<String>,
     ipv4: Option<String>,
@@ -324,13 +325,13 @@ fn now_millis() -> u128 {
         .unwrap_or(0)
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn dns_adapter_cache() -> &'static Mutex<Option<(u128, Vec<DnsAdapter>)>> {
     static CACHE: OnceLock<Mutex<Option<(u128, Vec<DnsAdapter>)>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn clear_dns_adapter_cache() {
     if let Ok(mut guard) = dns_adapter_cache().lock() {
         *guard = None;
@@ -361,6 +362,236 @@ fn run_powershell(command: &str) -> Result<String, String> {
 
 fn ps_escape_single(value: &str) -> String {
     value.replace('\'', "''")
+}
+
+#[cfg(target_os = "linux")]
+fn split_nmcli_fields(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut escaped = false;
+
+    for ch in line.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == ':' {
+            fields.push(current);
+            current = String::new();
+        } else {
+            current.push(ch);
+        }
+    }
+
+    fields.push(current);
+    fields
+}
+
+#[cfg(target_os = "linux")]
+fn run_command_output(program: &str, args: &[String]) -> Result<String, String> {
+    let output = Command::new(program).args(args).output().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!("{}-not-found", program)
+        } else {
+            error.to_string()
+        }
+    })?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if stderr.is_empty() {
+            Err(stdout)
+        } else {
+            Err(stderr)
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_nmcli(args: &[String]) -> Result<String, String> {
+    run_command_output("nmcli", args)
+}
+
+#[cfg(target_os = "linux")]
+fn is_nmcli_permission_error(error: &str) -> bool {
+    let text = error.to_lowercase();
+    text.contains("not authorized")
+        || text.contains("permission")
+        || text.contains("polkit")
+        || text.contains("access denied")
+        || text.contains("insufficient privileges")
+}
+
+#[cfg(target_os = "linux")]
+fn run_nmcli_with_auth(args: &[String]) -> Result<String, String> {
+    match run_nmcli(args) {
+        Ok(output) => Ok(output),
+        Err(error) => {
+            if !is_nmcli_permission_error(&error) {
+                return Err(error);
+            }
+            let mut pkexec_args = Vec::with_capacity(args.len() + 1);
+            pkexec_args.push("nmcli".to_string());
+            pkexec_args.extend(args.iter().cloned());
+            run_command_output("pkexec", &pkexec_args).map_err(|pkexec_error| {
+                if pkexec_error == "pkexec-not-found" {
+                    "permission-required".to_string()
+                } else {
+                    pkexec_error
+                }
+            })
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_connection_type_supported(connection_type: &str) -> bool {
+    matches!(
+        connection_type.trim().to_lowercase().as_str(),
+        "ethernet" | "wifi" | "802-3-ethernet" | "802-11-wireless"
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn linux_connection_is_excluded(name: &str, device: &str, connection_type: &str) -> bool {
+    let text = format!("{} {} {}", name, device, connection_type).to_lowercase();
+    [
+        "vpn",
+        "wireguard",
+        "openvpn",
+        "tun",
+        "tap",
+        "tailscale",
+        "zerotier",
+        "hamachi",
+        "docker",
+        "veth",
+        "bridge",
+        "br-",
+        "virbr",
+        "loopback",
+        "dummy",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_connection_details(uuid: &str) -> (Vec<String>, Option<String>, Option<String>) {
+    let args = vec![
+        "-t".to_string(),
+        "-f".to_string(),
+        "IP4.DNS,IP4.ADDRESS,IP4.GATEWAY".to_string(),
+        "connection".to_string(),
+        "show".to_string(),
+        uuid.to_string(),
+    ];
+    let output = match run_nmcli(&args) {
+        Ok(output) => output,
+        Err(_) => return (vec![], None, None),
+    };
+
+    let mut dns = Vec::new();
+    let mut ipv4 = None;
+    let mut gateway = None;
+
+    for line in output.lines() {
+        let fields = split_nmcli_fields(line);
+        if fields.len() < 2 {
+            continue;
+        }
+        let key = fields[0].trim();
+        let value = fields[1..].join(":").trim().to_string();
+        if value.is_empty() {
+            continue;
+        }
+        if key.starts_with("IP4.DNS") {
+            dns.push(value);
+        } else if key.starts_with("IP4.ADDRESS") && ipv4.is_none() {
+            ipv4 = Some(value.split('/').next().unwrap_or("").trim().to_string())
+                .filter(|address| !address.is_empty());
+        } else if key == "IP4.GATEWAY" && gateway.is_none() {
+            gateway = Some(value);
+        }
+    }
+
+    (dns, ipv4, gateway)
+}
+
+#[cfg(target_os = "linux")]
+fn normalize_linux_dns_server(value: &str) -> Option<(String, bool)> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(ip) = trimmed.parse::<std::net::IpAddr>() {
+        return Some((ip.to_string(), ip.is_ipv6()));
+    }
+    if let Ok(socket) = trimmed.parse::<SocketAddr>() {
+        let ip = socket.ip();
+        return Some((ip.to_string(), ip.is_ipv6()));
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn build_linux_dns_modify_args(
+    uuid: &str,
+    primary_dns: &str,
+    secondary_dns: Option<String>,
+) -> Result<Vec<String>, String> {
+    let mut ipv4_servers = Vec::new();
+    let mut ipv6_servers = Vec::new();
+    let mut input_servers = vec![primary_dns.to_string()];
+    if let Some(secondary) = secondary_dns {
+        if !secondary.trim().is_empty() {
+            input_servers.push(secondary);
+        }
+    }
+
+    for server in input_servers {
+        let Some((normalized, is_ipv6)) = normalize_linux_dns_server(&server) else {
+            return Err("invalid-input".to_string());
+        };
+        if is_ipv6 {
+            ipv6_servers.push(normalized);
+        } else {
+            ipv4_servers.push(normalized);
+        }
+    }
+
+    let mut args = vec![
+        "connection".to_string(),
+        "modify".to_string(),
+        uuid.to_string(),
+    ];
+    args.extend([
+        "ipv4.ignore-auto-dns".to_string(),
+        "yes".to_string(),
+        "ipv4.dns".to_string(),
+        ipv4_servers.join(" "),
+        "ipv6.dns".to_string(),
+        ipv6_servers.join(" "),
+    ]);
+    if !ipv6_servers.is_empty() {
+        args.extend(["ipv6.ignore-auto-dns".to_string(), "yes".to_string()]);
+    }
+
+    Ok(args)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_reactivate_connection(uuid: &str) -> Result<(), String> {
+    let args = vec!["connection".to_string(), "up".to_string(), uuid.to_string()];
+    run_nmcli_with_auth(&args).map(|_| ())
 }
 
 #[cfg(target_os = "windows")]
@@ -448,6 +679,7 @@ fn parse_dns_adapters_from_output(output: &str) -> Vec<DnsAdapter> {
             .map(|text| text.trim().to_string())
             .filter(|value| !value.is_empty());
         adapters.push(DnsAdapter {
+            id: name.clone(),
             name,
             dns,
             ipv4,
@@ -734,6 +966,77 @@ fn list_dns_adapters(force_refresh: Option<bool>) -> Vec<DnsAdapter> {
     }
 
     #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let force_refresh = force_refresh.unwrap_or(false);
+        if !force_refresh {
+            if let Ok(guard) = dns_adapter_cache().lock() {
+                if let Some((cached_at, adapters)) = guard.as_ref() {
+                    if now_millis().saturating_sub(*cached_at) <= DNS_ADAPTER_CACHE_TTL_MS {
+                        return adapters.clone();
+                    }
+                }
+            }
+        }
+
+        let args = vec![
+            "-t".to_string(),
+            "-f".to_string(),
+            "NAME,UUID,TYPE,DEVICE,STATE".to_string(),
+            "connection".to_string(),
+            "show".to_string(),
+            "--active".to_string(),
+        ];
+        let output = match run_nmcli(&args) {
+            Ok(output) => output,
+            Err(_) => return vec![],
+        };
+
+        let mut adapters = Vec::new();
+        for line in output.lines() {
+            let fields = split_nmcli_fields(line);
+            if fields.len() < 5 {
+                continue;
+            }
+            let connection_name = fields[0].trim();
+            let uuid = fields[1].trim();
+            let connection_type = fields[2].trim();
+            let device = fields[3].trim();
+            let state = fields[4].trim();
+
+            if connection_name.is_empty()
+                || uuid.is_empty()
+                || device.is_empty()
+                || !linux_connection_type_supported(connection_type)
+                || linux_connection_is_excluded(connection_name, device, connection_type)
+            {
+                continue;
+            }
+
+            let (dns, ipv4, gateway) = linux_connection_details(uuid);
+            let name = if device.is_empty() {
+                connection_name.to_string()
+            } else {
+                format!("{} ({})", connection_name, device)
+            };
+            adapters.push(DnsAdapter {
+                id: uuid.to_string(),
+                name,
+                dns,
+                ipv4,
+                gateway,
+                status: Some(state.to_string()).filter(|value| !value.is_empty()),
+            });
+        }
+
+        adapters.sort_by(|left, right| left.name.cmp(&right.name));
+        if let Ok(mut guard) = dns_adapter_cache().lock() {
+            *guard = Some((now_millis(), adapters.clone()));
+        }
+        adapters
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
     {
         let _ = force_refresh;
         vec![]
@@ -783,7 +1086,43 @@ fn set_adapter_dns(
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let uuid = adapter_name.trim();
+        let primary = primary_dns.trim();
+        if uuid.is_empty() || primary.is_empty() {
+            return DnsManagerResult {
+                success: false,
+                error: Some("invalid-input".to_string()),
+            };
+        }
+
+        let modify_args = match build_linux_dns_modify_args(uuid, primary, secondary_dns) {
+            Ok(args) => args,
+            Err(error) => {
+                return DnsManagerResult {
+                    success: false,
+                    error: Some(error),
+                }
+            }
+        };
+
+        match run_nmcli_with_auth(&modify_args).and_then(|_| linux_reactivate_connection(uuid)) {
+            Ok(_) => {
+                clear_dns_adapter_cache();
+                DnsManagerResult {
+                    success: true,
+                    error: None,
+                }
+            }
+            Err(error) => DnsManagerResult {
+                success: false,
+                error: Some(error),
+            },
+        }
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
     {
         let _ = (adapter_name, primary_dns, secondary_dns);
         DnsManagerResult {
@@ -823,7 +1162,46 @@ fn reset_adapter_dns(adapter_name: String) -> DnsManagerResult {
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let uuid = adapter_name.trim();
+        if uuid.is_empty() {
+            return DnsManagerResult {
+                success: false,
+                error: Some("invalid-input".to_string()),
+            };
+        }
+
+        let args = vec![
+            "connection".to_string(),
+            "modify".to_string(),
+            uuid.to_string(),
+            "ipv4.ignore-auto-dns".to_string(),
+            "no".to_string(),
+            "ipv4.dns".to_string(),
+            "".to_string(),
+            "ipv6.ignore-auto-dns".to_string(),
+            "no".to_string(),
+            "ipv6.dns".to_string(),
+            "".to_string(),
+        ];
+
+        match run_nmcli_with_auth(&args).and_then(|_| linux_reactivate_connection(uuid)) {
+            Ok(_) => {
+                clear_dns_adapter_cache();
+                DnsManagerResult {
+                    success: true,
+                    error: None,
+                }
+            }
+            Err(error) => DnsManagerResult {
+                success: false,
+                error: Some(error),
+            },
+        }
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
     {
         let _ = adapter_name;
         DnsManagerResult {
