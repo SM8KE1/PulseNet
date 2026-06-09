@@ -4010,7 +4010,7 @@ h1 {
 }
 
 .app-shell.compact .container {
-    padding-top: 68px;
+    padding-top: 0;
 }
 .app-shell.compact .ping-card {
     padding: 12px 14px;
