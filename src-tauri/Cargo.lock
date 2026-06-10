@@ -2890,7 +2890,7 @@ dependencies = [
 
 [[package]]
 name = "pulsenet"
-version = "1.6.1"
+version = "1.6.2"
 dependencies = [
  "auto-launch",
  "reqwest 0.11.27",
