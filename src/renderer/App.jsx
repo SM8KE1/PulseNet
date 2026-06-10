@@ -2,9 +2,9 @@
 import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
 import Lottie from 'lottie-react';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { open } from '@tauri-apps/api/shell';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import 'flag-icons/css/flag-icons.min.css';
 import ThemeToggle from './ThemeToggle';
 import GitHubIcon from './GitHubIcon';
@@ -878,7 +878,7 @@ const App = () => {
 
   const handleDonateClick = useCallback(() => {
     setShowDonateNudge(false);
-    open('https://daramet.com/SM0KE');
+    openUrl('https://daramet.com/SM0KE');
   }, []);
 
   const toggleTheme = () => {
@@ -1674,7 +1674,7 @@ const App = () => {
       return;
     }
     try {
-      await open(updateInfo.url);
+      await openUrl(updateInfo.url);
     } catch (error) {
       console.error('Failed to open update URL:', error);
     } finally {
@@ -1829,7 +1829,7 @@ const App = () => {
     const githubBtn = document.getElementById('github-button');
     const handleMinimize = () => invoke('perform_close_action', { action: 'minimize' });
     const handleClose = () => requestCloseFlow();
-    const handleGithub = () => open('https://github.com/SM8KE1/PulseNet');
+    const handleGithub = () => openUrl('https://github.com/SM8KE1/PulseNet');
 
     minimizeBtn.addEventListener('click', handleMinimize);
     closeBtn.addEventListener('click', handleClose);
@@ -2730,7 +2730,7 @@ const App = () => {
 
   const handleOpenDeveloperGithub = useCallback((event) => {
     event.preventDefault();
-    open('https://github.com/SM8KE1');
+    openUrl('https://github.com/SM8KE1');
   }, []);
 
 

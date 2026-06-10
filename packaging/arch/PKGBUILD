@@ -14,7 +14,7 @@ depends=(
   "networkmanager"
   "openssl"
   "polkit"
-  "webkit2gtk"
+  "webkit2gtk-4.1"
 )
 makedepends=(
   "cargo"

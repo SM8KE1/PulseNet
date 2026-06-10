@@ -1,18 +1,15 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PulseNet",
+  "version": "1.6.1",
+  "identifier": "com.pulsenet.app",
   "build": {
     "beforeDevCommand": "npm run dev:ui",
     "beforeBuildCommand": "npm run build:ui",
-    "devPath": "http://127.0.0.1:5173",
-    "distDir": "../dist"
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../dist"
   },
-  "package": {
-    "productName": "PulseNet",
-    "version": "1.6.1"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": true
-    },
+  "app": {
     "windows": [
       {
         "title": "PulseNet",
@@ -28,33 +25,33 @@
     "security": {
       "csp": null
     },
-    "systemTray": {
+    "trayIcon": {
+      "id": "main",
       "iconPath": "icons/icon.ico",
       "iconAsTemplate": false
-    },
-    "bundle": {
-      "active": true,
-      "targets": "all",
-      "identifier": "com.pulsenet.app",
-      "windows": {
-        "nsis": {
-          "template": "nsis-template.nsi"
-        },
-        "wix": {
-          "fragmentPaths": [
-            "wix/legacy-nsis-cleanup.wxs"
-          ],
-          "componentGroupRefs": [
-            "LegacyNsisCleanupGroup"
-          ]
-        }
-      },
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.ico"
-      ]
     }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "windows": {
+      "nsis": {
+        "template": "nsis-template.nsi"
+      },
+      "wix": {
+        "fragmentPaths": [
+          "wix/legacy-nsis-cleanup.wxs"
+        ],
+        "componentGroupRefs": [
+          "LegacyNsisCleanupGroup"
+        ]
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
   }
 }

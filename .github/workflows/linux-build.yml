@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
@@ -30,13 +30,13 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libssl-dev \
-            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
             wget
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Setup Rust
@@ -44,6 +44,10 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
+
+      - name: Refresh Rust dependency lockfile
+        working-directory: src-tauri
+        run: cargo update
 
       - name: Build Linux bundles
         run: npm run build

@@ -50,8 +50,7 @@ For Arch-based systems:
 ```bash
 git clone https://github.com/SM8KE1/PulseNet.git
 cd PulseNet
-sudo pacman -S --needed base-devel git nodejs npm rust cargo gtk3 libayatana-appindicator librsvg networkmanager openssl polkit
-yay -S webkit2gtk
+sudo pacman -S --needed base-devel git nodejs npm rust cargo gtk3 libayatana-appindicator librsvg networkmanager openssl polkit webkit2gtk-4.1
 cd packaging/arch
 makepkg -si
 pulsenet
@@ -65,6 +64,7 @@ For reliable ICMP ping behavior on Windows, run PulseNet with administrator priv
 
 Linux DNS Manager support uses NetworkManager through `nmcli`.
 For applying or resetting DNS, the system must allow NetworkManager changes through the active user session or Polkit/`pkexec`.
+Linux builds use Tauri v2 and WebKitGTK 4.1, which is compatible with Ubuntu 24.04 and current Debian-based distributions.
 On Arch-based systems, the native package launcher sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` by default to avoid common WebKitGTK EGL/DMABUF startup issues.
 
 ## Development

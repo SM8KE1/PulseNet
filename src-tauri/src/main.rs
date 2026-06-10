@@ -14,10 +14,9 @@ use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use surge_ping::{Client as PingClient, Config as PingConfig, PingIdentifier, PingSequence, ICMP};
-use tauri::{
-    AppHandle, CustomMenuItem, Manager, State, SystemTray, SystemTrayEvent, SystemTrayMenu,
-    SystemTrayMenuItem, Window, WindowEvent,
-};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State, Window, WindowEvent};
 use tokio::net::lookup_host;
 use tokio::time::timeout;
 use trust_dns_resolver::config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts};
@@ -160,10 +159,10 @@ struct AutoLaunchPref {
 }
 
 fn auto_launch_config_path(app: &tauri::AppHandle) -> PathBuf {
-    if let Some(dir) = app.path_resolver().app_config_dir() {
-        return dir.join("auto-launch.json");
-    }
-    PathBuf::from("auto-launch.json")
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.join("auto-launch.json"))
+        .unwrap_or_else(|_| PathBuf::from("auto-launch.json"))
 }
 
 fn read_auto_launch_pref(app: &tauri::AppHandle) -> Option<bool> {
@@ -852,7 +851,9 @@ fn perform_close_action(action: String, window: Window) -> bool {
 
 #[tauri::command]
 fn set_tray_status(app: AppHandle, status: String) -> bool {
-    app.tray_handle().set_tooltip(&status).is_ok()
+    app.tray_by_id("main")
+        .map(|tray| tray.set_tooltip(Some(&status)).is_ok())
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -1571,7 +1572,7 @@ fn handle_close_requested(window: &Window, state: &State<AppState>) {
 }
 
 fn show_main_window(app: &AppHandle) {
-    if let Some(window) = app.get_window("main") {
+    if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
@@ -1579,41 +1580,55 @@ fn show_main_window(app: &AppHandle) {
 }
 
 fn main() {
-    let tray_menu = SystemTrayMenu::new()
-        .add_item(CustomMenuItem::new("show".to_string(), "Show PulseNet"))
-        .add_item(CustomMenuItem::new("settings".to_string(), "Settings"))
-        .add_native_item(SystemTrayMenuItem::Separator)
-        .add_item(CustomMenuItem::new(
-            "restart".to_string(),
-            "Restart PulseNet",
-        ))
-        .add_item(CustomMenuItem::new("exit".to_string(), "Exit"));
-
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
-        .system_tray(SystemTray::new().with_menu(tray_menu))
-        .on_system_tray_event(|app, event| match event {
-            SystemTrayEvent::LeftClick { .. } => {
-                show_main_window(app);
-            }
-            SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
-                "show" => show_main_window(app),
-                "settings" => {
-                    show_main_window(app);
-                    if let Some(window) = app.get_window("main") {
-                        let _ = window
-                            .emit("tray-open-page", serde_json::json!({ "page": "settings" }));
+        .setup(|app| {
+            let show = MenuItem::with_id(app, "show", "Show PulseNet", true, None::<&str>)?;
+            let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+            let restart =
+                MenuItem::with_id(app, "restart", "Restart PulseNet", true, None::<&str>)?;
+            let exit = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let tray_menu = Menu::with_items(
+                app,
+                &[&show, &settings, &separator, &restart, &exit],
+            )?;
+
+            TrayIconBuilder::with_id("main")
+                .menu(&tray_menu)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main_window(&tray.app_handle());
                     }
-                }
-                "restart" => {
-                    app.restart();
-                }
-                "exit" => {
-                    app.exit(0);
-                }
-                _ => {}
-            },
-            _ => {}
+                })
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => show_main_window(app),
+                    "settings" => {
+                        show_main_window(app);
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.emit(
+                                "tray-open-page",
+                                serde_json::json!({ "page": "settings" }),
+                            );
+                        }
+                    }
+                    "restart" => {
+                        app.restart();
+                    }
+                    "exit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .build(app)?;
+
+            Ok(())
         })
         .on_window_event(|event| {
             if let WindowEvent::CloseRequested { api, .. } = event.event() {

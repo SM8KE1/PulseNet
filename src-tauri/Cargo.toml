@@ -6,10 +6,11 @@ authors = ["SM0KE"]
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2.6.2", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = ["api-all", "system-tray"] }
+tauri = { version = "2.11.2", features = ["tray-icon", "image-ico", "image-png"] }
+tauri-plugin-opener = "2.5.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 auto-launch = "0.5"
