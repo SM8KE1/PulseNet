@@ -1630,12 +1630,11 @@ fn main() {
 
             Ok(())
         })
-        .on_window_event(|event| {
-            if let WindowEvent::CloseRequested { api, .. } = event.event() {
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let window = event.window();
                 let state: State<AppState> = window.state();
-                handle_close_requested(&window, &state);
+                handle_close_requested(window, &state);
             }
         })
         .invoke_handler(tauri::generate_handler![

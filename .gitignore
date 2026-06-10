@@ -27,6 +27,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.cargo/config.toml
 
 # Test coverage
 coverage/
