@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   release:
     types:
       - created
@@ -80,11 +82,17 @@ jobs:
           path: packaging/arch/**
           if-no-files-found: error
 
+      - name: Package Arch files for release
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        run: tar -czf pulsenet-linux-arch-packaging.tar.gz -C packaging arch
+
       - name: Attach bundles to GitHub release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          generate_release_notes: true
           files: |
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
+            pulsenet-linux-arch-packaging.tar.gz
