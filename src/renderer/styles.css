@@ -3542,6 +3542,7 @@ h1 {
 }
 .settings-button {
     max-width: 100%;
+    min-width: 78px;
     padding: 8px 16px;
     border-radius: 10px;
     border: none;
@@ -3554,6 +3555,10 @@ h1 {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.settings-item > .settings-button {
+    flex: 0 0 auto;
+    min-width: 86px;
 }
 .settings-button.secondary {
     background: var(--bg-soft-hover);

@@ -770,6 +770,10 @@ const App = () => {
     const saved = localStorage.getItem('betaUpdates');
     return saved === 'true';
   });
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState(() => {
+    const saved = localStorage.getItem('autoCheckUpdates');
+    return saved ? saved === 'true' : true;
+  });
   const speedRequestRef = useRef({ id: 0 });
   const speedPhaseTimersRef = useRef([]);
   const [dnsDomain, setDnsDomain] = useState('');
@@ -1075,6 +1079,10 @@ const App = () => {
   useEffect(() => {
     localStorage.setItem('betaUpdates', String(betaUpdates));
   }, [betaUpdates]);
+
+  useEffect(() => {
+    localStorage.setItem('autoCheckUpdates', String(autoCheckUpdates));
+  }, [autoCheckUpdates]);
 
   useEffect(() => {
     localStorage.setItem('dnsBatchDomainsInput', batchDomainsInput);
@@ -1647,12 +1655,16 @@ const App = () => {
     invoke('perform_close_action', { action });
   };
 
-  const handleCheckUpdates = async () => {
-    setUpdateStatus(texts.updateChecking);
+  const runUpdateCheck = useCallback(async ({ manual = false } = {}) => {
+    if (manual) {
+      setUpdateStatus(texts.updateChecking);
+    }
     try {
       const result = await invoke('check_for_updates', { includePrerelease: betaUpdates });
       if (result && result.error) {
-        setUpdateStatus(texts.updateFailed);
+        if (manual) {
+          setUpdateStatus(texts.updateFailed);
+        }
         return;
       }
       if (result && result.updateAvailable) {
@@ -1661,12 +1673,34 @@ const App = () => {
         setUpdateStatus('');
         return;
       }
-      setUpdateStatus(texts.updateUpToDate);
+      if (manual) {
+        setUpdateStatus(texts.updateUpToDate);
+      }
     } catch (error) {
       console.error('Failed to check updates:', error);
-      setUpdateStatus(texts.updateFailed);
+      if (manual) {
+        setUpdateStatus(texts.updateFailed);
+      }
     }
+  }, [betaUpdates, isPersian]);
+
+  const handleCheckUpdates = () => {
+    runUpdateCheck({ manual: true });
   };
+
+  useEffect(() => {
+    if (!autoCheckUpdates || !appVersion) return undefined;
+    const lastCheckedAt = Number(localStorage.getItem('lastAutoUpdateCheckAt') || 0);
+    const now = Date.now();
+    if (Number.isFinite(lastCheckedAt) && now - lastCheckedAt < 24 * 60 * 60 * 1000) {
+      return undefined;
+    }
+    const timerId = window.setTimeout(() => {
+      localStorage.setItem('lastAutoUpdateCheckAt', String(Date.now()));
+      runUpdateCheck({ manual: false });
+    }, 4000);
+    return () => window.clearTimeout(timerId);
+  }, [appVersion, autoCheckUpdates, runUpdateCheck]);
 
   const handleUpdateDownload = async () => {
     if (!updateInfo || !updateInfo.url) {
@@ -2133,6 +2167,8 @@ const App = () => {
       settingsUpdateTitle: 'Check Update Now',
       settingsUpdateHint: 'Compare your version with GitHub',
       settingsUpdateButton: 'Check',
+      settingsAutoUpdateCheck: 'Auto check updates',
+      settingsAutoUpdateCheckHint: 'Notify when a newer version is available',
       settingsBetaUpdate: 'Beta updates',
       settingsBetaUpdateHint: 'Include pre-release versions in update check',
       updateChecking: 'Checking...',
@@ -2350,6 +2386,8 @@ const App = () => {
       settingsUpdateTitle: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a',
       settingsUpdateHint: '\u0645\u0642\u0627\u06cc\u0633\u0647 \u0648\u0631\u0698\u0646 \u0628\u0627 \u06af\u06cc\u062a \u0647\u0627\u0628',
       settingsUpdateButton: '\u0628\u0631\u0631\u0633\u06cc',
+      settingsAutoUpdateCheck: '\u0628\u0631\u0631\u0633\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u0622\u067e\u062f\u06cc\u062a',
+      settingsAutoUpdateCheckHint: '\u0648\u0642\u062a\u06cc \u0646\u0633\u062e\u0647 \u062c\u062f\u06cc\u062f \u0645\u0648\u062c\u0648\u062f \u0628\u0648\u062f \u0627\u0637\u0644\u0627\u0639 \u0628\u062f\u0647',
       settingsBetaUpdate: '\u0622\u067e\u062f\u06cc\u062a \u0628\u062a\u0627',
       settingsBetaUpdateHint: '\u0646\u0633\u062e\u0647\u200c\u0647\u0627\u06cc pre-release \u0647\u0645 \u0628\u0631\u0631\u0633\u06cc \u0634\u0648\u062f',
       updateChecking: '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc...',
@@ -2680,6 +2718,7 @@ const App = () => {
       showPublicIp,
       closeAction,
       betaUpdates,
+      autoCheckUpdates,
       displayName,
       locale: isPersian ? 'fa' : 'en',
     };
@@ -2712,6 +2751,7 @@ const App = () => {
       if (typeof parsed.showPublicIp === 'boolean') setShowPublicIp(parsed.showPublicIp);
       if (parsed.closeAction) setCloseAction(parsed.closeAction);
       if (typeof parsed.betaUpdates === 'boolean') setBetaUpdates(parsed.betaUpdates);
+      if (typeof parsed.autoCheckUpdates === 'boolean') setAutoCheckUpdates(parsed.autoCheckUpdates);
       if (parsed.displayName) {
         setDisplayName(parsed.displayName);
         setNameInput(parsed.displayName);
@@ -3764,6 +3804,20 @@ const App = () => {
                   <button className="settings-button" onClick={handleCheckUpdates}>
                     {texts.settingsUpdateButton}
                   </button>
+                </div>
+                <div className="settings-item">
+                  <div className="settings-label">
+                    <div className="settings-name">{texts.settingsAutoUpdateCheck}</div>
+                    <div className="settings-hint">{texts.settingsAutoUpdateCheckHint}</div>
+                  </div>
+                  <label className="settings-switch">
+                    <input
+                      type="checkbox"
+                      checked={autoCheckUpdates}
+                      onChange={(event) => setAutoCheckUpdates(event.target.checked)}
+                    />
+                    <span className="settings-slider"></span>
+                  </label>
                 </div>
                 <div className="settings-item">
                   <div className="settings-label">
