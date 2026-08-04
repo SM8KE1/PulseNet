@@ -5,7 +5,7 @@ PulseNet is a desktop network utility built with **Tauri + React**.
 It provides ping monitoring, DNS testing and management, speed testing, logs, and app settings in one lightweight app.
 
 [![Windows](https://img.shields.io/badge/Windows-Ready-green)](https://github.com/SM8KE1/PulseNet/releases)
-[![Version](https://img.shields.io/badge/version-1.6.2-blue)](https://github.com/SM8KE1/PulseNet/releases)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com/SM8KE1/PulseNet/releases)
 
 <img width="1000" height="600" alt="Screenshot 2026-06-08 164748" src="https://github.com/user-attachments/assets/5c034c43-0ccd-453d-aa42-768ccf621cff" />
 
@@ -23,7 +23,7 @@ It provides ping monitoring, DNS testing and management, speed testing, logs, an
 - Sidebar donation shortcut for `https://daramet.com/SM0KE`
 - Per-application network control: Windows Firewall block/unblock and Linux cgroup/nftables block/rate rules
 
-## Version 1.6.2
+## Version 2.0.0
 
 - Refreshed DNS, Speed Test, Log, Settings, Ping, and About screens
 - Improved DNS adapter detection speed and filtering for internet-related physical adapters
@@ -92,7 +92,7 @@ npm run build
 - `src/renderer` -> React UI
 - `src-tauri/src/main.rs` -> Tauri backend
 - `src-tauri/tauri.conf.json` -> app/window/bundle config
-- `native/windows-firewall` -> public user-mode Windows Firewall service
+- `native/windows-firewall` -> public user-mode Windows Filtering Platform service
 - `experimental/windows-wfp` -> excluded WFP driver prototype
 
 ## License

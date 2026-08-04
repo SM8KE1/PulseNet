@@ -4,7 +4,7 @@ Class=NetService
 ClassGuid={4D36E974-E325-11CE-BFC1-08002BE10318}
 Provider=%ProviderName%
 CatalogFile=PulseNetWfp.cat
-DriverVer=08/04/2026,1.6.2.0
+DriverVer=08/05/2026,2.0.0.0
 PnpLockdown=1
 
 [DefaultInstall.NTamd64]

@@ -8,6 +8,11 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import 'flag-icons/css/flag-icons.min.css';
 import ThemeToggle from './ThemeToggle';
 import GitHubIcon from './GitHubIcon';
+import {
+  compareNetworkProcesses,
+  hasActiveBandwidthLimit,
+  normalizeLimiterPath,
+} from './networkUsage.mjs';
 import iconIco from '../../assets/icon.ico';
 import iranFlag from '../../assets/iran.svg';
 import earthA from '../../assets/earth-a.svg';
@@ -51,6 +56,15 @@ const PING_GOOD_THRESHOLD_MS = 120;
 const SPEED_PHASE_DOWNLOAD_DELAY_MS = 1200;
 const DONATE_NUDGE_DELAY_MS = 2 * 60 * 1000;
 const NETWORK_PROCESS_PREVIEW_LIMIT = 4;
+const NETWORK_DOWNLOAD_CHART_COLORS = [
+  'var(--accent)',
+  'var(--success)',
+  'var(--warning)',
+  'var(--danger)',
+  '#9b8cff',
+  '#42c4c7',
+];
+const NETWORK_DOWNLOAD_CHART_CIRCUMFERENCE = 2 * Math.PI * 46;
 const BANDWIDTH_UNIT_FACTORS = {
   kbps: 1000,
   mbps: 1000000,
@@ -135,8 +149,6 @@ const formatBytes = (bytes) => {
 };
 
 const formatByteRate = (bytesPerSecond) => `${formatBytes(bytesPerSecond)}/s`;
-
-const normalizeLimiterPath = (path) => String(path || '').trim().replace(/\//g, '\\').toLowerCase();
 
 const formatBandwidthLimit = (bitsPerSecond) => {
   const value = Number(bitsPerSecond || 0);
@@ -709,6 +721,8 @@ const AppDropdown = ({
   disabled = false,
   className = '',
   placeholder = '',
+  prefix = '',
+  ariaLabel = '',
 }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -739,29 +753,38 @@ const AppDropdown = ({
   return (
     <div
       ref={rootRef}
-      className={`app-dropdown ${open ? 'open' : ''} ${disabled ? 'disabled' : ''} ${className}`.trim()}
+      className={`app-dropdown ${open ? 'open' : ''} ${disabled ? 'disabled' : ''} ${prefix ? 'has-prefix' : ''} ${className}`.trim()}
     >
       <button
         type="button"
         className="app-dropdown-trigger"
         onClick={() => !disabled && setOpen((prev) => !prev)}
         disabled={disabled}
+        aria-label={ariaLabel || prefix || placeholder}
+        aria-haspopup="listbox"
+        aria-expanded={open}
       >
-        <span className="app-dropdown-text">{selected?.label || placeholder}</span>
+        <span className="app-dropdown-copy">
+          {prefix && <span className="app-dropdown-prefix">{prefix}</span>}
+          <span className="app-dropdown-text">{selected?.label || placeholder}</span>
+        </span>
         <span className="app-dropdown-chevron" aria-hidden="true"></span>
       </button>
-      <div className="app-dropdown-menu">
+      <div className="app-dropdown-menu" role="listbox" aria-label={ariaLabel || prefix || placeholder}>
         {options.map((item) => (
           <button
             key={`drop-${item.value}`}
             type="button"
             className={`app-dropdown-item ${item.value === value ? 'active' : ''}`}
+            role="option"
+            aria-selected={item.value === value}
             onClick={() => {
               if (item.value !== value) onChange(item.value);
               setOpen(false);
             }}
           >
-            {item.label}
+            <span>{item.label}</span>
+            {item.value === value && <span className="app-dropdown-selected-mark" aria-hidden="true">&#10003;</span>}
           </button>
         ))}
       </div>
@@ -819,8 +842,13 @@ const App = () => {
   const [networkSnapshot, setNetworkSnapshot] = useState(null);
   const [previousNetworkSnapshot, setPreviousNetworkSnapshot] = useState(null);
   const [networkLoading, setNetworkLoading] = useState(false);
+  const [networkUsageResetting, setNetworkUsageResetting] = useState(false);
   const [networkError, setNetworkError] = useState('');
   const [networkProcessSearch, setNetworkProcessSearch] = useState('');
+  const [hoveredNetworkApplicationId, setHoveredNetworkApplicationId] = useState('');
+  const [networkProcessSort, setNetworkProcessSort] = useState(() => (
+    localStorage.getItem('networkProcessSort') || 'connections-desc'
+  ));
   const [showAllNetworkProcesses, setShowAllNetworkProcesses] = useState(false);
   const [expandedNetworkProcesses, setExpandedNetworkProcesses] = useState({});
   const [bandwidthLimiterState, setBandwidthLimiterState] = useState({ engine: null, rules: [] });
@@ -1087,6 +1115,24 @@ const App = () => {
     }
   }, []);
 
+  const resetNetworkApplicationUsage = useCallback(async () => {
+    if (networkUsageResetting) return;
+    setNetworkUsageResetting(true);
+    setNetworkError('');
+    try {
+      await invoke('reset_network_application_usage');
+      setHoveredNetworkApplicationId('');
+      setNetworkSnapshot((current) => (
+        current ? { ...current, applications: [] } : current
+      ));
+    } catch (error) {
+      console.error('Failed to reset network application usage:', error);
+      setNetworkError(String(error || 'network-usage-reset-failed'));
+    } finally {
+      setNetworkUsageResetting(false);
+    }
+  }, [networkUsageResetting]);
+
   const loadBandwidthLimiterState = useCallback(async () => {
     try {
       const result = await invoke('get_bandwidth_limiter_state');
@@ -1246,12 +1292,15 @@ const App = () => {
   }, [loadPublicNetworkInfo]);
 
   useEffect(() => {
+    loadBandwidthLimiterState();
+  }, [loadBandwidthLimiterState]);
+
+  useEffect(() => {
     if (currentPage !== 'network') return undefined;
     loadNetworkUsage();
-    loadBandwidthLimiterState();
     const intervalId = window.setInterval(loadNetworkUsage, 1000);
     return () => window.clearInterval(intervalId);
-  }, [currentPage, loadBandwidthLimiterState, loadNetworkUsage]);
+  }, [currentPage, loadNetworkUsage]);
 
   useEffect(() => {
     const nextIp = String(speedMetrics?.ip || '').trim();
@@ -2293,6 +2342,18 @@ const App = () => {
       networkRemote: 'Remote',
       networkPath: 'Path',
       networkSearchProcesses: 'Search process or remote IP...',
+      networkSortBy: 'Sort',
+      networkSortMostConnections: 'Most connections',
+      networkSortFewestConnections: 'Fewest connections',
+      networkSortLimitedFirst: 'Limited first',
+      networkSortNameAsc: 'Name A-Z',
+      networkSortNameDesc: 'Name Z-A',
+      networkAppDownloadTitle: 'App download share',
+      networkAppDownloadSubtitle: 'Tracked TCP downloads by application',
+      networkAppDownloadEmpty: 'No tracked app download data yet',
+      networkAppDownloadOther: 'Other apps',
+      networkAppDownloadTracked: 'Tracked total',
+      networkAppDownloadReset: 'Reset download history',
       networkCategoryMain: 'Applications',
       networkCategoryBrowsers: 'Browsers',
       networkCategoryApps: 'Apps',
@@ -2554,8 +2615,8 @@ const App = () => {
       platform: '\u067e\u0644\u062a\u0641\u0631\u0645',
       ping: '\u067e\u06cc\u0646\u06af',
       dnsChecker: '\u062a\u0633\u062a \u062f\u0627\u0645\u0646\u0647',
-      dnsToolTest: '\u062a\u0633\u062a DNS',
-      dnsToolManager: '\u0645\u062f\u06cc\u0631 DNS',
+      dnsToolTest: 'DNS تست',
+      dnsToolManager: 'DNS مدیریت',
       speedTest: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
       networkUsage: 'مصرف شبکه',
       networkMonitorSubtitle: 'نمایش زنده ترافیک آداپتورها و پردازش‌های فعال شبکه',
@@ -2574,7 +2635,19 @@ const App = () => {
       networkConnections: 'اتصال‌ها',
       networkRemote: 'ریموت',
       networkPath: 'مسیر',
-      networkSearchProcesses: 'جستجوی پردازش یا IP ریموت...',
+      networkSearchProcesses: 'جستجو',
+      networkSortBy: 'مرتب‌سازی',
+      networkSortMostConnections: 'بیشترین اتصال',
+      networkSortFewestConnections: 'کمترین اتصال',
+      networkSortLimitedFirst: 'دارای محدودیت',
+      networkSortNameAsc: 'نام A-Z',
+      networkSortNameDesc: 'نام Z-A',
+      networkAppDownloadTitle: 'سهم دانلود برنامه‌ها',
+      networkAppDownloadSubtitle: 'TCP دانلود ها بر حسب کانکشن',
+      networkAppDownloadEmpty: 'هنوز داده‌ای از دانلود برنامه‌ها ثبت نشده است',
+      networkAppDownloadOther: 'سایر برنامه‌ها',
+      networkAppDownloadTracked: 'مجموع ثبت‌شده',
+      networkAppDownloadReset: 'بازنشانی تاریخچه دانلود',
       networkCategoryMain: 'برنامه‌ها',
       networkCategoryBrowsers: 'مرورگرها',
       networkCategoryApps: 'برنامه‌ها',
@@ -2600,7 +2673,7 @@ const App = () => {
       limiterSetupRequired: 'راه‌اندازی کنترل شبکه لازم است',
       limiterServiceStopped: 'سرویس کنترل شبکه متوقف است',
       limiterServicePreparing: 'سرویس کنترل شبکه در حال آماده‌سازی است',
-      limiterStagedHint: 'برای فعال‌شدن قانون‌ها، ابزار کنترل شبکه PulseNet را یک‌بار نصب کنید.',
+      limiterStagedHint: ' برای فعال‌شدن قانون‌ها، ابزار کنترل شبکه را یک‌بار نصب کنید.',
       limiterBlockInternet: 'قطع اینترنت',
       limiterUnblockInternet: 'وصل اینترنت',
       limiterBlocked: 'قطع‌شده',
@@ -3008,6 +3081,21 @@ const App = () => {
     { value: 'status-asc', label: texts.dnsSortStatus },
   ]), [texts]);
 
+  const networkProcessSortOptions = useMemo(() => ([
+    { value: 'connections-desc', label: texts.networkSortMostConnections },
+    { value: 'connections-asc', label: texts.networkSortFewestConnections },
+    { value: 'limited-first', label: texts.networkSortLimitedFirst },
+    { value: 'name-asc', label: texts.networkSortNameAsc },
+    { value: 'name-desc', label: texts.networkSortNameDesc },
+  ]), [texts]);
+
+  const bandwidthUnitOptions = useMemo(() => ([
+    { value: 'kbps', label: texts.limiterKbps },
+    { value: 'mbps', label: texts.limiterMbps },
+    { value: 'kbytes', label: texts.limiterKBps },
+    { value: 'mbytes', label: texts.limiterMBps },
+  ]), [texts]);
+
   const speedPhaseLabel = useMemo(() => {
     if (speedPhase === 'download') return texts.speedPhaseDownload;
     if (speedPhase === 'upload') return texts.speedPhaseUpload;
@@ -3042,6 +3130,8 @@ const App = () => {
       totalSent: 0,
       adapters: [],
       processes: [],
+      applicationUsage: [],
+      applicationDownloadTotal: 0,
       maxAdapterRate: 0,
       activeAdapters: 0,
       activeProcesses: 0,
@@ -3066,6 +3156,47 @@ const App = () => {
 
     const receivedDelta = previous ? Math.max(0, Number(current.receivedBytes || 0) - Number(previous.receivedBytes || 0)) : 0;
     const sentDelta = previous ? Math.max(0, Number(current.sentBytes || 0) - Number(previous.sentBytes || 0)) : 0;
+
+    const applicationRows = (current.applications || [])
+      .map((application, index) => ({
+        ...application,
+        id: application.path || `${application.name || 'unknown'}-${index}`,
+        name: String(application.name || 'Unknown'),
+        downloadBytes: Math.max(0, Number(application.downloadBytes || 0)),
+      }))
+      .filter((application) => application.downloadBytes > 0)
+      .sort((left, right) => right.downloadBytes - left.downloadBytes);
+    const applicationDownloadTotal = applicationRows.reduce(
+      (total, application) => total + application.downloadBytes,
+      0
+    );
+    const primaryApplications = applicationRows.slice(0, 5);
+    const otherDownloadBytes = applicationRows
+      .slice(5)
+      .reduce((total, application) => total + application.downloadBytes, 0);
+    if (otherDownloadBytes > 0) {
+      primaryApplications.push({
+        id: 'other-applications',
+        name: texts.networkAppDownloadOther,
+        path: '',
+        iconDataUrl: '',
+        downloadBytes: otherDownloadBytes,
+      });
+    }
+    let applicationOffset = 0;
+    const applicationUsage = primaryApplications.map((application, index) => {
+      const share = applicationDownloadTotal
+        ? application.downloadBytes / applicationDownloadTotal
+        : 0;
+      const result = {
+        ...application,
+        share,
+        offset: applicationOffset,
+        color: NETWORK_DOWNLOAD_CHART_COLORS[index % NETWORK_DOWNLOAD_CHART_COLORS.length],
+      };
+      applicationOffset += share;
+      return result;
+    });
 
     const processMap = new Map();
     for (const process of current.processes || []) {
@@ -3115,6 +3246,7 @@ const App = () => {
         const pids = [...new Set(process.pids)].sort((left, right) => Number(left) - Number(right));
         const remoteAddresses = [...new Set(process.remoteAddresses)].slice(0, 8);
         const icons = [...new Set(process.icons || [])];
+        const hasBandwidthLimit = hasActiveBandwidthLimit(process.paths, bandwidthRulesByPath);
         return {
           ...process,
           connections,
@@ -3122,6 +3254,7 @@ const App = () => {
           remoteAddresses,
           icons,
           iconDataUrl: icons[0] || '',
+          hasBandwidthLimit,
           status,
           statusLabel: statusLabels[status],
           categoryLabel: categoryLabels[process.category],
@@ -3138,7 +3271,7 @@ const App = () => {
         };
       })
       .filter((process) => !query || process.searchText.includes(query))
-      .sort((left, right) => Number(right.connections || 0) - Number(left.connections || 0))
+      .sort((left, right) => compareNetworkProcesses(networkProcessSort, left, right))
       .slice(0, 24);
 
     const processGroups = [
@@ -3166,8 +3299,10 @@ const App = () => {
       activeProcesses: (current.processes || []).filter((process) => Number(process.connections || 0) > 0).length,
       processes: displayProcesses,
       processGroups,
+      applicationUsage,
+      applicationDownloadTotal,
     };
-  }, [networkSnapshot, previousNetworkSnapshot, networkProcessSearch, texts]);
+  }, [bandwidthRulesByPath, networkSnapshot, previousNetworkSnapshot, networkProcessSearch, networkProcessSort, texts]);
 
   const visibleNetworkProcessGroups = useMemo(() => {
     if (showAllNetworkProcesses) {
@@ -3190,10 +3325,14 @@ const App = () => {
   );
   const canToggleNetworkProcesses = networkUsageStats.processes.length > NETWORK_PROCESS_PREVIEW_LIMIT;
   const hiddenNetworkProcessCount = Math.max(0, networkUsageStats.processes.length - visibleNetworkProcessCount);
+  const highlightedNetworkApplication = networkUsageStats.applicationUsage.find(
+    (application) => application.id === hoveredNetworkApplicationId
+  ) || networkUsageStats.applicationUsage[0] || null;
 
   useEffect(() => {
     setShowAllNetworkProcesses(false);
-  }, [networkProcessSearch]);
+    localStorage.setItem('networkProcessSort', networkProcessSort);
+  }, [networkProcessSearch, networkProcessSort]);
 
   const pageTitle = useMemo(() => {
     if (currentPage === 'dns') return texts.dnsChecker;
@@ -4254,7 +4393,8 @@ const App = () => {
             </div>
 
             <div className="network-content-grid">
-              <div className="network-panel">
+              <div className="network-overview-column">
+                <div className="network-panel">
                 <div className="network-panel-head">
                   <div className="network-panel-title">{texts.networkAdapters}</div>
                   <span>{networkUsageStats.adapters.length}</span>
@@ -4288,6 +4428,103 @@ const App = () => {
                     })}
                   </div>
                 )}
+                </div>
+                <section
+                  className="network-panel network-download-chart-card"
+                  onMouseLeave={() => setHoveredNetworkApplicationId('')}
+                >
+                  <div className="network-download-chart-head">
+                    <div>
+                      <strong>{texts.networkAppDownloadTitle}</strong>
+                      <span>{texts.networkAppDownloadSubtitle}</span>
+                    </div>
+                    <div className="network-download-chart-actions">
+                      <em title={texts.networkAppDownloadTracked}>
+                        {formatBytes(networkUsageStats.applicationDownloadTotal)}
+                      </em>
+                      <button
+                        type="button"
+                        className="network-download-reset"
+                        onClick={resetNetworkApplicationUsage}
+                        disabled={networkUsageResetting}
+                        aria-label={texts.networkAppDownloadReset}
+                        title={texts.networkAppDownloadReset}
+                      >
+                        <RefreshIcon spinning={networkUsageResetting} />
+                      </button>
+                    </div>
+                  </div>
+                  {networkUsageStats.applicationUsage.length === 0 ? (
+                    <div className="network-download-chart-empty">
+                      <span className="network-download-empty-ring" aria-hidden="true"></span>
+                      <span>{texts.networkAppDownloadEmpty}</span>
+                    </div>
+                  ) : (
+                    <div className="network-download-chart-layout">
+                      <div className="network-download-donut">
+                        <svg viewBox="0 0 120 120" role="img" aria-label={texts.networkAppDownloadTitle}>
+                          <circle className="network-download-donut-track" cx="60" cy="60" r="46" />
+                          {networkUsageStats.applicationUsage.map((application) => {
+                            const segmentLength = Math.max(
+                              0,
+                              application.share * NETWORK_DOWNLOAD_CHART_CIRCUMFERENCE - 2.5
+                            );
+                            return (
+                              <circle
+                                key={`download-segment-${application.id}`}
+                                className={`network-download-donut-segment ${highlightedNetworkApplication?.id === application.id ? 'active' : ''}`}
+                                cx="60"
+                                cy="60"
+                                r="46"
+                                stroke={application.color}
+                                strokeDasharray={`${segmentLength} ${NETWORK_DOWNLOAD_CHART_CIRCUMFERENCE - segmentLength}`}
+                                strokeDashoffset={-application.offset * NETWORK_DOWNLOAD_CHART_CIRCUMFERENCE}
+                                onMouseEnter={() => setHoveredNetworkApplicationId(application.id)}
+                              >
+                                <title>{`${application.name}: ${formatBytes(application.downloadBytes)} (${Math.round(application.share * 100)}%)`}</title>
+                              </circle>
+                            );
+                          })}
+                        </svg>
+                        {highlightedNetworkApplication && (
+                          <div className="network-download-donut-center" aria-live="polite">
+                            <span className="network-download-center-icon">
+                              {highlightedNetworkApplication.iconDataUrl ? (
+                                <img src={highlightedNetworkApplication.iconDataUrl} alt="" />
+                              ) : (
+                                <strong>
+                                  {Array.from(highlightedNetworkApplication.name || '?').slice(0, 2).join('').toUpperCase()}
+                                </strong>
+                              )}
+                            </span>
+                            <strong>{highlightedNetworkApplication.name}</strong>
+                            <span>{Math.round(highlightedNetworkApplication.share * 100)}%</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="network-download-legend">
+                        {networkUsageStats.applicationUsage.map((application) => (
+                          <button
+                            type="button"
+                            key={`download-legend-${application.id}`}
+                            className={highlightedNetworkApplication?.id === application.id ? 'active' : ''}
+                            style={{ '--chart-color': application.color }}
+                            onMouseEnter={() => setHoveredNetworkApplicationId(application.id)}
+                            onFocus={() => setHoveredNetworkApplicationId(application.id)}
+                            aria-label={`${application.name}: ${formatBytes(application.downloadBytes)}, ${Math.round(application.share * 100)}%`}
+                          >
+                            <i aria-hidden="true"></i>
+                            <span>
+                              <strong>{application.name}</strong>
+                              <em>{formatBytes(application.downloadBytes)}</em>
+                            </span>
+                            <b>{Math.round(application.share * 100)}%</b>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
               </div>
 
               <div className="network-panel network-process-panel">
@@ -4322,6 +4559,14 @@ const App = () => {
                     placeholder={texts.networkSearchProcesses}
                     className="network-process-search"
                   />
+                  <AppDropdown
+                    value={networkProcessSort}
+                    onChange={setNetworkProcessSort}
+                    options={networkProcessSortOptions}
+                    className="network-process-sort"
+                    prefix={texts.networkSortBy}
+                    ariaLabel={texts.networkSortBy}
+                  />
                 </div>
                 {networkUsageStats.activeProcesses === 0 ? (
                   <div className="network-empty">
@@ -4340,6 +4585,7 @@ const App = () => {
                         </div>
                         {group.processes.map((process) => {
                           const isExpanded = Boolean(expandedNetworkProcesses[process.id]);
+                          const processDetailsId = `network-process-details-${String(process.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
                           const processExecutablePath = (process.paths || [])[0] || '';
                           const limitRule = bandwidthRulesByPath.get(normalizeLimiterPath(processExecutablePath));
                           const remotes = (process.remoteAddresses || []).slice(0, 3).join(', ');
@@ -4349,9 +4595,18 @@ const App = () => {
                           return (
                             <div className={`network-process-card ${process.status}`} key={process.id}>
                               <div className="network-process-card-main">
-                                <div className="network-process-name">
-                                  <strong>{process.name}</strong>
-                                  <span>{pidLabel}</span>
+                                <div className="network-process-identity">
+                                  <span className="network-process-app-icon">
+                                    {process.iconDataUrl ? (
+                                      <img src={process.iconDataUrl} alt="" />
+                                    ) : (
+                                      <strong>{Array.from(process.name || '?').slice(0, 2).join('').toUpperCase()}</strong>
+                                    )}
+                                  </span>
+                                  <div className="network-process-name">
+                                    <strong>{process.name}</strong>
+                                    <span>{pidLabel}</span>
+                                  </div>
                                 </div>
                                 <div className="network-process-badges">
                                   {limitRule && (
@@ -4371,32 +4626,13 @@ const App = () => {
                               </div>
                               <div className="network-process-preview">
                                 <span>{texts.networkRemote}: {remotes || '--'}</span>
-                                <button
-                                  type="button"
-                                  className="network-process-toggle"
-                                  onClick={() => setExpandedNetworkProcesses((current) => ({
-                                    ...current,
-                                    [process.id]: !current[process.id],
-                                  }))}
-                                >
-                                  {isExpanded ? texts.networkHideDetails : texts.networkDetails}
-                                </button>
                               </div>
-                              {isExpanded && (
+                              <div
+                                id={processDetailsId}
+                                className={`network-process-details-shell ${isExpanded ? 'expanded' : ''}`}
+                                aria-hidden={!isExpanded}
+                              >
                                 <div className="network-process-details">
-                                  <div className="network-process-expanded-head">
-                                    <span className="network-process-app-icon">
-                                      {process.iconDataUrl ? (
-                                        <img src={process.iconDataUrl} alt="" />
-                                      ) : (
-                                        <strong>{Array.from(process.name || '?').slice(0, 2).join('').toUpperCase()}</strong>
-                                      )}
-                                    </span>
-                                    <div className="network-process-expanded-title">
-                                      <strong>{process.name}</strong>
-                                      <span>{process.categoryLabel} / {process.statusLabel}</span>
-                                    </div>
-                                  </div>
                                   <div>
                                     <span>{texts.networkConnections}</span>
                                     <strong>{process.connections}</strong>
@@ -4411,36 +4647,48 @@ const App = () => {
                                       <strong>{process.paths.join(' | ')}</strong>
                                     </div>
                                   )}
-                                  <div className="network-process-limit-row">
-                                    <span>{networkControlIsWindows ? texts.limiterBlockInternet : texts.limiterTitle}</span>
-                                    <div className="network-process-limit-summary">
-                                      {limitRule && !networkControlIsWindows && (
-                                        <span>
-                                          {limitRule.blocked
-                                            ? texts.limiterBlocked
-                                            : `↓ ${formatBandwidthLimit(limitRule.downloadLimitBps)} / ↑ ${formatBandwidthLimit(limitRule.uploadLimitBps)}`}
-                                        </span>
-                                      )}
-                                      <button
-                                        type="button"
-                                        className="network-process-limit-button"
-                                        disabled={!processExecutablePath || bandwidthLimitSaving}
-                                        onClick={() => networkControlIsWindows
-                                          ? handleToggleApplicationBlock(process)
-                                          : openBandwidthLimitModal(process)}
-                                      >
-                                        {networkControlIsWindows
-                                          ? limitRule?.blocked
-                                            ? texts.limiterUnblockInternet
-                                            : texts.limiterBlockInternet
-                                          : limitRule
-                                            ? texts.limiterEditLimit
-                                            : texts.limiterSetLimit}
-                                      </button>
+                                  {limitRule && !networkControlIsWindows && (
+                                    <div>
+                                      <span>{texts.limiterTitle}</span>
+                                      <strong>
+                                        {limitRule.blocked
+                                          ? texts.limiterBlocked
+                                          : `↓ ${formatBandwidthLimit(limitRule.downloadLimitBps)} / ↑ ${formatBandwidthLimit(limitRule.uploadLimitBps)}`}
+                                      </strong>
                                     </div>
-                                  </div>
+                                  )}
                                 </div>
-                              )}
+                              </div>
+                              <div className="network-process-card-actions">
+                                <button
+                                  type="button"
+                                  className="network-process-limit-button"
+                                  disabled={!processExecutablePath || bandwidthLimitSaving}
+                                  onClick={() => networkControlIsWindows
+                                    ? handleToggleApplicationBlock(process)
+                                    : openBandwidthLimitModal(process)}
+                                >
+                                  {networkControlIsWindows
+                                    ? limitRule?.blocked
+                                      ? texts.limiterUnblockInternet
+                                      : texts.limiterBlockInternet
+                                    : limitRule
+                                      ? texts.limiterEditLimit
+                                      : texts.limiterSetLimit}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="network-process-toggle"
+                                  aria-expanded={isExpanded}
+                                  aria-controls={processDetailsId}
+                                  onClick={() => setExpandedNetworkProcesses((current) => ({
+                                    ...current,
+                                    [process.id]: !current[process.id],
+                                  }))}
+                                >
+                                  {isExpanded ? texts.networkHideDetails : texts.networkDetails}
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -4836,19 +5084,17 @@ const App = () => {
                 />
               </label>
             </div>
-            <label className="bandwidth-limit-unit">
+            <div className="bandwidth-limit-unit">
               <span>{texts.limiterUnit}</span>
-              <select
+              <AppDropdown
+                className="bandwidth-limit-unit-select"
                 value={bandwidthLimitForm.unit}
                 disabled={bandwidthLimitForm.blocked}
-                onChange={(event) => handleBandwidthLimitUnitChange(event.target.value)}
-              >
-                <option value="kbps">{texts.limiterKbps}</option>
-                <option value="mbps">{texts.limiterMbps}</option>
-                <option value="kbytes">{texts.limiterKBps}</option>
-                <option value="mbytes">{texts.limiterMBps}</option>
-              </select>
-            </label>
+                onChange={handleBandwidthLimitUnitChange}
+                options={bandwidthUnitOptions}
+                ariaLabel={texts.limiterUnit}
+              />
+            </div>
             {!bandwidthLimiterState.engine?.ready && (
               <div className="bandwidth-limit-notice">{texts.limiterStagedHint}</div>
             )}

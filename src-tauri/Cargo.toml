@@ -1,6 +1,6 @@
 [package]
 name = "pulsenet"
-version = "1.6.2"
+version = "2.0.0"
 description = "Ping Monitoring"
 authors = ["SM0KE"]
 edition = "2021"
@@ -22,6 +22,7 @@ surge-ping = "0.8"
 base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
+png = "0.17"
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",

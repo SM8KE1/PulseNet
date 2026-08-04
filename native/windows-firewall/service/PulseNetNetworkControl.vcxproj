@@ -20,7 +20,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
     <TargetName>PulseNetNetworkControl</TargetName>
-    <OutDir>$(ProjectDir)..\out\$(Configuration)\</OutDir>
+    <OutDir>$(ProjectDir)..\out\Build\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)..\out\obj\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
@@ -32,10 +32,16 @@
       <AdditionalIncludeDirectories>$(ProjectDir)..\shared;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>Advapi32.lib;Ole32.lib;OleAut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Advapi32.lib;Fwpuclnt.lib;Iphlpapi.lib;Ole32.lib;OleAut32.lib;Rpcrt4.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="main.cpp" /></ItemGroup>
-  <ItemGroup><ClInclude Include="..\shared\pulsenet_network_control.h" /></ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="wfp_blocker.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\shared\pulsenet_network_control.h" />
+    <ClInclude Include="wfp_blocker.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

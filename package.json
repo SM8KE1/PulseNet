@@ -1,12 +1,14 @@
 {
   "name": "pulsenet",
-  "version": "1.6.2",
+  "version": "2.0.0",
   "description": "Ping Monitoring",
   "scripts": {
     "dev": "tauri dev",
     "build": "node scripts/build-platform.mjs",
+    "setup:network-helper": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-windows-network-helper.ps1",
     "dev:ui": "vite --host 127.0.0.1 --port 5173 --strictPort",
-    "build:ui": "vite build"
+    "build:ui": "vite build",
+    "test:ui": "node --test src/renderer/networkUsage.test.mjs"
   },
   "author": "SM0KE",
   "license": "ISC",

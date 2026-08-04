@@ -1,7 +1,7 @@
 # Maintainer: SM0KE
 
 pkgname=pulsenet
-pkgver=1.6.2
+pkgver=2.0.0
 pkgrel=1
 pkgdesc="Lightweight desktop network utility built with Tauri and React"
 arch=("x86_64")

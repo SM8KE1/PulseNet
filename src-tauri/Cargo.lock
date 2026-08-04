@@ -2890,11 +2890,12 @@ dependencies = [
 
 [[package]]
 name = "pulsenet"
-version = "1.6.2"
+version = "2.0.0"
 dependencies = [
  "auto-launch",
  "base64 0.22.1",
  "dbus",
+ "png 0.17.16",
  "reqwest 0.11.27",
  "serde",
  "serde_json",

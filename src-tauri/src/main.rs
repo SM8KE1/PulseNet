@@ -123,6 +123,8 @@ const BANDWIDTH_LIMITER_COMMAND_HANDSHAKE: u16 = 1;
 #[cfg(target_os = "windows")]
 const BANDWIDTH_LIMITER_COMMAND_REPLACE_RULES: u16 = 3;
 #[cfg(target_os = "windows")]
+const BANDWIDTH_LIMITER_COMMAND_GET_USAGE: u16 = 4;
+#[cfg(target_os = "windows")]
 const BANDWIDTH_LIMITER_STATUS_SERVICE_READY: u32 = 0x0000_0001;
 #[cfg(target_os = "windows")]
 const BANDWIDTH_LIMITER_STATUS_FIREWALL_READY: u32 = 0x0000_0002;
@@ -257,6 +259,34 @@ struct NetworkProcessUsage {
     remote_addresses: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+struct NetworkApplicationUsage {
+    name: String,
+    path: Option<String>,
+    #[serde(rename = "iconDataUrl")]
+    icon_data_url: Option<String>,
+    #[serde(rename = "downloadBytes")]
+    download_bytes: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PersistedNetworkApplicationUsage {
+    key: String,
+    name: String,
+    path: Option<String>,
+    total_download_bytes: u64,
+    last_helper_download_bytes: u64,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct PersistedNetworkApplicationUsageState {
+    #[serde(default)]
+    reset_pending: bool,
+    applications: Vec<PersistedNetworkApplicationUsage>,
+}
+
 #[derive(Serialize, Clone)]
 struct NetworkUsageSnapshot {
     #[serde(rename = "timestampMs")]
@@ -267,6 +297,7 @@ struct NetworkUsageSnapshot {
     sent_bytes: u64,
     adapters: Vec<NetworkAdapterUsage>,
     processes: Vec<NetworkProcessUsage>,
+    applications: Vec<NetworkApplicationUsage>,
     error: Option<String>,
 }
 
@@ -361,6 +392,47 @@ fn bandwidth_limits_path(app: &tauri::AppHandle) -> PathBuf {
         .app_config_dir()
         .map(|dir| dir.join("bandwidth-limits.json"))
         .unwrap_or_else(|_| PathBuf::from("bandwidth-limits.json"))
+}
+
+fn network_application_usage_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.join("network-application-usage.json"))
+        .unwrap_or_else(|_| PathBuf::from("network-application-usage.json"))
+}
+
+fn network_application_usage_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn network_application_usage_key(name: &str, path: Option<&str>) -> String {
+    path.filter(|value| !value.trim().is_empty())
+        .map(normalize_executable_path)
+        .unwrap_or_else(|| format!("name:{}", name.trim().to_lowercase()))
+}
+
+fn load_network_application_usage_state(
+    app: &tauri::AppHandle,
+) -> Result<PersistedNetworkApplicationUsageState, String> {
+    let path = network_application_usage_path(app);
+    if !path.exists() {
+        return Ok(PersistedNetworkApplicationUsageState::default());
+    }
+    let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&raw).map_err(|error| format!("invalid-network-usage-history: {error}"))
+}
+
+fn save_network_application_usage_state(
+    app: &tauri::AppHandle,
+    state: &PersistedNetworkApplicationUsageState,
+) -> Result<(), String> {
+    let path = network_application_usage_path(app);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let data = serde_json::to_vec_pretty(state).map_err(|error| error.to_string())?;
+    fs::write(path, data).map_err(|error| error.to_string())
 }
 
 fn normalize_executable_path(path: &str) -> String {
@@ -913,6 +985,110 @@ fn send_limiter_request(command: u16, payload: &[u8]) -> Result<LimiterServiceRe
 }
 
 #[cfg(target_os = "windows")]
+fn send_limiter_usage_request() -> Result<Vec<NetworkApplicationUsage>, String> {
+    let pipe_name = to_wide_null(BANDWIDTH_LIMITER_PIPE_NAME);
+    if unsafe { WaitNamedPipeW(pipe_name.as_ptr(), 750) } == 0 {
+        return Err(format!("limiter-pipe-unavailable:{}", unsafe {
+            GetLastError()
+        }));
+    }
+
+    let raw_handle = unsafe {
+        CreateFileW(
+            pipe_name.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            0,
+            null(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            null_mut(),
+        )
+    };
+    if raw_handle == INVALID_HANDLE_VALUE {
+        return Err(format!("limiter-pipe-open-failed:{}", unsafe {
+            GetLastError()
+        }));
+    }
+    let handle = OwnedWindowsHandle(raw_handle);
+    let request_id = BANDWIDTH_LIMITER_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+    let mut request = Vec::with_capacity(20);
+    append_u32(&mut request, BANDWIDTH_LIMITER_IPC_MAGIC);
+    append_u16(&mut request, BANDWIDTH_LIMITER_PROTOCOL_VERSION);
+    append_u16(&mut request, BANDWIDTH_LIMITER_COMMAND_GET_USAGE);
+    append_u32(&mut request, 0);
+    append_u64(&mut request, request_id);
+    write_windows_handle(handle.0, &request)?;
+
+    let mut header = [0u8; 20];
+    read_windows_handle_exact(handle.0, &mut header)?;
+    let payload_size = read_u32(&header, 8).unwrap_or(u32::MAX) as usize;
+    if read_u32(&header, 0) != Some(BANDWIDTH_LIMITER_IPC_MAGIC)
+        || read_u16(&header, 4) != Some(BANDWIDTH_LIMITER_PROTOCOL_VERSION)
+        || read_u16(&header, 6) != Some(BANDWIDTH_LIMITER_COMMAND_GET_USAGE)
+        || read_u64(&header, 12) != Some(request_id)
+        || !(16..=BANDWIDTH_LIMITER_MAX_MESSAGE_SIZE).contains(&payload_size)
+    {
+        return Err("invalid-network-usage-response-header".to_string());
+    }
+
+    let mut payload = vec![0u8; payload_size];
+    read_windows_handle_exact(handle.0, &mut payload)?;
+    let win32_error = read_u32(&payload, 4).unwrap_or(u32::MAX);
+    let entry_count = read_u32(&payload, 8).unwrap_or(u32::MAX);
+    if win32_error != ERROR_SUCCESS || read_u32(&payload, 12) != Some(0) || entry_count > 64 {
+        return Err(format!("network-usage-service-error:{win32_error}"));
+    }
+
+    let mut offset = 16usize;
+    let mut applications = Vec::with_capacity(entry_count as usize);
+    for _ in 0..entry_count {
+        if payload.len().saturating_sub(offset) < 20 {
+            return Err("truncated-network-usage-entry".to_string());
+        }
+        let download_bytes = read_u64(&payload, offset).unwrap_or(0);
+        let path_chars = read_u32(&payload, offset + 8).unwrap_or(u32::MAX) as usize;
+        let name_chars = read_u32(&payload, offset + 12).unwrap_or(u32::MAX) as usize;
+        if read_u32(&payload, offset + 16) != Some(0) || path_chars > 32767 || name_chars > 32767 {
+            return Err("invalid-network-usage-entry".to_string());
+        }
+        offset += 20;
+        let text_bytes = path_chars
+            .checked_add(name_chars)
+            .and_then(|value| value.checked_mul(2))
+            .ok_or_else(|| "network-usage-text-overflow".to_string())?;
+        if payload.len().saturating_sub(offset) < text_bytes {
+            return Err("truncated-network-usage-text".to_string());
+        }
+        let decode = |start: usize, characters: usize| {
+            let values = payload[start..start + characters * 2]
+                .chunks_exact(2)
+                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                .collect::<Vec<_>>();
+            String::from_utf16_lossy(&values)
+        };
+        let path = decode(offset, path_chars);
+        offset += path_chars * 2;
+        let name = decode(offset, name_chars);
+        offset += name_chars * 2;
+        let icon_data_url = if path.is_empty() {
+            None
+        } else {
+            windows_process_icon_data_url(&path)
+        };
+        applications.push(NetworkApplicationUsage {
+            name,
+            path: (!path.is_empty()).then_some(path),
+            icon_data_url,
+            download_bytes,
+        });
+    }
+    if offset != payload.len() {
+        return Err("unexpected-network-usage-response-data".to_string());
+    }
+    Ok(applications)
+}
+
+#[cfg(target_os = "windows")]
 fn replace_limiter_rules(rules: &[BandwidthLimitRule]) -> Result<LimiterServiceResponse, String> {
     let payload = serialize_bandwidth_rules(rules)?;
     send_limiter_request(BANDWIDTH_LIMITER_COMMAND_REPLACE_RULES, &payload)
@@ -926,7 +1102,7 @@ fn limiter_status_message(response: &LimiterServiceResponse) -> String {
     if response.status_flags & BANDWIDTH_LIMITER_STATUS_SERVICE_READY == 0 {
         "service-not-ready".to_string()
     } else if response.status_flags & BANDWIDTH_LIMITER_STATUS_FIREWALL_READY == 0 {
-        "firewall-not-ready".to_string()
+        "wfp-not-ready".to_string()
     } else {
         "ready".to_string()
     }
@@ -952,7 +1128,7 @@ fn bandwidth_limiter_engine_status() -> BandwidthLimiterEngineStatus {
         if manager.is_null() {
             return BandwidthLimiterEngineStatus {
                 platform: "windows".to_string(),
-                mode: "windows-firewall".to_string(),
+                mode: "windows-wfp".to_string(),
                 supported: true,
                 installed: false,
                 running: false,
@@ -966,7 +1142,7 @@ fn bandwidth_limiter_engine_status() -> BandwidthLimiterEngineStatus {
             let _ = CloseServiceHandle(manager);
             return BandwidthLimiterEngineStatus {
                 platform: "windows".to_string(),
-                mode: "windows-firewall".to_string(),
+                mode: "windows-wfp".to_string(),
                 supported: true,
                 installed: false,
                 running: false,
@@ -990,7 +1166,7 @@ fn bandwidth_limiter_engine_status() -> BandwidthLimiterEngineStatus {
         let running = queried != 0 && status.dwCurrentState == SERVICE_RUNNING;
         let status = BandwidthLimiterEngineStatus {
             platform: "windows".to_string(),
-            mode: "windows-firewall".to_string(),
+            mode: "windows-wfp".to_string(),
             supported: true,
             installed: true,
             running,
@@ -1232,6 +1408,7 @@ fn empty_network_usage_snapshot(error: Option<String>) -> NetworkUsageSnapshot {
         sent_bytes: 0,
         adapters: vec![],
         processes: vec![],
+        applications: vec![],
         error,
     }
 }
@@ -1256,6 +1433,149 @@ fn get_cached_network_usage_snapshot() -> NetworkUsageSnapshot {
         *guard = Some((now_millis(), snapshot.clone()));
     }
     snapshot
+}
+
+fn update_network_application_usage_state(
+    state: PersistedNetworkApplicationUsageState,
+    current: &[NetworkApplicationUsage],
+) -> PersistedNetworkApplicationUsageState {
+    let reset_pending = state.reset_pending;
+    let mut persisted = state
+        .applications
+        .into_iter()
+        .map(|application| (application.key.clone(), application))
+        .collect::<HashMap<_, _>>();
+
+    for application in current {
+        let key = network_application_usage_key(&application.name, application.path.as_deref());
+        if reset_pending {
+            persisted.insert(
+                key.clone(),
+                PersistedNetworkApplicationUsage {
+                    key,
+                    name: application.name.clone(),
+                    path: application.path.clone(),
+                    total_download_bytes: 0,
+                    last_helper_download_bytes: application.download_bytes,
+                },
+            );
+        } else if let Some(existing) = persisted.get_mut(&key) {
+            let delta = if application.download_bytes >= existing.last_helper_download_bytes {
+                application
+                    .download_bytes
+                    .saturating_sub(existing.last_helper_download_bytes)
+            } else {
+                application.download_bytes
+            };
+            existing.total_download_bytes = existing.total_download_bytes.saturating_add(delta);
+            existing.last_helper_download_bytes = application.download_bytes;
+            existing.name = application.name.clone();
+            existing.path = application.path.clone();
+        } else {
+            persisted.insert(
+                key.clone(),
+                PersistedNetworkApplicationUsage {
+                    key,
+                    name: application.name.clone(),
+                    path: application.path.clone(),
+                    total_download_bytes: application.download_bytes,
+                    last_helper_download_bytes: application.download_bytes,
+                },
+            );
+        }
+    }
+
+    let mut applications = persisted.into_values().collect::<Vec<_>>();
+    applications.sort_by(|left, right| {
+        right
+            .total_download_bytes
+            .cmp(&left.total_download_bytes)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+
+    PersistedNetworkApplicationUsageState {
+        reset_pending: reset_pending && current.is_empty(),
+        applications,
+    }
+}
+
+fn merge_network_application_usage_history(
+    app: &tauri::AppHandle,
+    current: &[NetworkApplicationUsage],
+) -> Result<Vec<NetworkApplicationUsage>, String> {
+    let _guard = network_application_usage_lock()
+        .lock()
+        .map_err(|_| "network-usage-history-lock-poisoned".to_string())?;
+    let state =
+        update_network_application_usage_state(load_network_application_usage_state(app)?, current);
+    save_network_application_usage_state(app, &state)?;
+    let mut current_icons = current
+        .iter()
+        .map(|application| {
+            (
+                network_application_usage_key(&application.name, application.path.as_deref()),
+                application.icon_data_url.clone(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    Ok(state
+        .applications
+        .into_iter()
+        .filter(|application| application.total_download_bytes > 0)
+        .map(|application| {
+            let mut icon_data_url = current_icons.remove(&application.key).flatten();
+            #[cfg(target_os = "windows")]
+            if icon_data_url.is_none() {
+                icon_data_url = application
+                    .path
+                    .as_deref()
+                    .and_then(windows_process_icon_data_url);
+            }
+            NetworkApplicationUsage {
+                name: application.name,
+                path: application.path,
+                icon_data_url,
+                download_bytes: application.total_download_bytes,
+            }
+        })
+        .collect())
+}
+
+#[cfg(target_os = "windows")]
+fn reset_network_application_usage_history(app: &tauri::AppHandle) -> Result<(), String> {
+    let current = send_limiter_usage_request();
+    let _guard = network_application_usage_lock()
+        .lock()
+        .map_err(|_| "network-usage-history-lock-poisoned".to_string())?;
+    let reset_pending = current.is_err();
+    let mut applications = current
+        .unwrap_or_default()
+        .into_iter()
+        .map(|application| PersistedNetworkApplicationUsage {
+            key: network_application_usage_key(&application.name, application.path.as_deref()),
+            name: application.name,
+            path: application.path,
+            total_download_bytes: 0,
+            last_helper_download_bytes: application.download_bytes,
+        })
+        .collect::<Vec<_>>();
+    applications.sort_by(|left, right| left.key.cmp(&right.key));
+    save_network_application_usage_state(
+        app,
+        &PersistedNetworkApplicationUsageState {
+            reset_pending,
+            applications,
+        },
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn reset_network_application_usage_history(app: &tauri::AppHandle) -> Result<(), String> {
+    let _guard = network_application_usage_lock()
+        .lock()
+        .map_err(|_| "network-usage-history-lock-poisoned".to_string())?;
+    save_network_application_usage_state(app, &PersistedNetworkApplicationUsageState::default())
 }
 
 #[cfg(target_os = "windows")]
@@ -1365,40 +1685,40 @@ fn to_wide_null(value: &str) -> Vec<u16> {
 }
 
 #[cfg(target_os = "windows")]
-fn bmp_data_url_from_bgra(width: i32, height: i32, pixels: &[u8]) -> Option<String> {
+fn png_data_url_from_bgra(width: i32, height: i32, pixels: &[u8]) -> Option<String> {
     if width <= 0 || height <= 0 {
         return None;
     }
 
     let width = width as usize;
     let height = height as usize;
-    let row_stride = width.checked_mul(4)?;
-    let image_size = row_stride.checked_mul(height)?;
-    let file_size = 14usize.checked_add(40)?.checked_add(image_size)?;
+    let pixel_len = width.checked_mul(height)?.checked_mul(4)?;
+    if pixels.len() != pixel_len {
+        return None;
+    }
 
-    let mut bmp = Vec::with_capacity(file_size);
-    bmp.extend_from_slice(b"BM");
-    bmp.extend_from_slice(&(file_size as u32).to_le_bytes());
-    bmp.extend_from_slice(&[0, 0, 0, 0]);
-    bmp.extend_from_slice(&(54u32).to_le_bytes());
-    bmp.extend_from_slice(&(40u32).to_le_bytes());
-    bmp.extend_from_slice(&(width as i32).to_le_bytes());
-    bmp.extend_from_slice(&(-(height as i32)).to_le_bytes());
-    bmp.extend_from_slice(&(1u16).to_le_bytes());
-    bmp.extend_from_slice(&(32u16).to_le_bytes());
-    bmp.extend_from_slice(&(BI_RGB as u32).to_le_bytes());
-    bmp.extend_from_slice(&(image_size as u32).to_le_bytes());
-    bmp.extend_from_slice(&[0; 16]);
-    bmp.extend_from_slice(pixels);
+    let mut rgba = Vec::with_capacity(pixel_len);
+    for pixel in pixels.chunks_exact(4) {
+        rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+    }
+
+    let mut encoded = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut encoded, width as u32, height as u32);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().ok()?;
+        writer.write_image_data(&rgba).ok()?;
+    }
 
     Some(format!(
-        "data:image/bmp;base64,{}",
-        general_purpose::STANDARD.encode(bmp)
+        "data:image/png;base64,{}",
+        general_purpose::STANDARD.encode(encoded)
     ))
 }
 
 #[cfg(target_os = "windows")]
-fn hicon_to_bmp_data_url(icon: HICON) -> Option<String> {
+fn hicon_to_png_data_url(icon: HICON) -> Option<String> {
     unsafe {
         let mut icon_info: ICONINFO = std::mem::zeroed();
         if GetIconInfo(icon, &mut icon_info) == 0 {
@@ -1480,7 +1800,7 @@ fn hicon_to_bmp_data_url(icon: HICON) -> Option<String> {
                 }
             }
 
-            bmp_data_url_from_bgra(width, height, &pixels)
+            png_data_url_from_bgra(width, height, &pixels)
         })();
 
         if !icon_info.hbmColor.is_null() {
@@ -1503,7 +1823,7 @@ fn extract_windows_process_icon(path: &str) -> Option<String> {
         if count == 0 || large_icon.is_null() {
             return None;
         }
-        let data_url = hicon_to_bmp_data_url(large_icon);
+        let data_url = hicon_to_png_data_url(large_icon);
         let _ = DestroyIcon(large_icon);
         data_url
     }
@@ -1699,6 +2019,7 @@ fn get_platform_network_usage_snapshot() -> NetworkUsageSnapshot {
         Err(error) => return empty_network_usage_snapshot(Some(error)),
     };
     let processes = windows_process_usage();
+    let applications = send_limiter_usage_request().unwrap_or_default();
     let received_bytes = adapters
         .iter()
         .map(|adapter| adapter.received_bytes)
@@ -1714,6 +2035,7 @@ fn get_platform_network_usage_snapshot() -> NetworkUsageSnapshot {
         sent_bytes,
         adapters,
         processes,
+        applications,
         error: None,
     }
 }
@@ -1772,6 +2094,7 @@ fn get_platform_network_usage_snapshot() -> NetworkUsageSnapshot {
         sent_bytes,
         adapters,
         processes,
+        applications: vec![],
         error: None,
     }
 }
@@ -3243,10 +3566,24 @@ async fn get_public_network_info() -> PublicNetworkInfo {
 }
 
 #[tauri::command]
-async fn get_network_usage_snapshot() -> NetworkUsageSnapshot {
-    tokio::task::spawn_blocking(get_cached_network_usage_snapshot)
+async fn get_network_usage_snapshot(app: AppHandle) -> NetworkUsageSnapshot {
+    tokio::task::spawn_blocking(move || {
+        let mut snapshot = get_cached_network_usage_snapshot();
+        match merge_network_application_usage_history(&app, &snapshot.applications) {
+            Ok(applications) => snapshot.applications = applications,
+            Err(error) => snapshot.error = Some(error),
+        }
+        snapshot
+    })
+    .await
+    .unwrap_or_else(|error| empty_network_usage_snapshot(Some(error.to_string())))
+}
+
+#[tauri::command]
+async fn reset_network_application_usage(app: AppHandle) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || reset_network_application_usage_history(&app))
         .await
-        .unwrap_or_else(|error| empty_network_usage_snapshot(Some(error.to_string())))
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -3525,6 +3862,53 @@ fn is_window_maximized(window: Window) -> bool {
 mod bandwidth_limiter_tests {
     use super::*;
 
+    fn test_application_usage(download_bytes: u64) -> NetworkApplicationUsage {
+        NetworkApplicationUsage {
+            name: "Example.exe".to_string(),
+            path: Some(r"C:\Apps\Example.exe".to_string()),
+            icon_data_url: None,
+            download_bytes,
+        }
+    }
+
+    #[test]
+    fn accumulates_only_new_application_download_bytes() {
+        let state = update_network_application_usage_state(
+            PersistedNetworkApplicationUsageState::default(),
+            &[test_application_usage(100)],
+        );
+        let state = update_network_application_usage_state(state, &[test_application_usage(140)]);
+
+        assert_eq!(state.applications.len(), 1);
+        assert_eq!(state.applications[0].total_download_bytes, 140);
+        assert_eq!(state.applications[0].last_helper_download_bytes, 140);
+    }
+
+    #[test]
+    fn keeps_history_when_the_usage_helper_counter_restarts() {
+        let state = update_network_application_usage_state(
+            PersistedNetworkApplicationUsageState::default(),
+            &[test_application_usage(1_000)],
+        );
+        let state = update_network_application_usage_state(state, &[test_application_usage(25)]);
+
+        assert_eq!(state.applications[0].total_download_bytes, 1_025);
+        assert_eq!(state.applications[0].last_helper_download_bytes, 25);
+    }
+
+    #[test]
+    fn pending_reset_uses_the_next_sample_as_a_zero_baseline() {
+        let state = PersistedNetworkApplicationUsageState {
+            reset_pending: true,
+            applications: vec![],
+        };
+        let state = update_network_application_usage_state(state, &[test_application_usage(500)]);
+
+        assert!(!state.reset_pending);
+        assert_eq!(state.applications[0].total_download_bytes, 0);
+        assert_eq!(state.applications[0].last_helper_download_bytes, 500);
+    }
+
     #[test]
     fn zero_limit_is_treated_as_unlimited() {
         assert_eq!(validate_bandwidth_limit(Some(0)).unwrap(), None);
@@ -3708,6 +4092,7 @@ fn main() {
             get_username,
             get_public_network_info,
             get_network_usage_snapshot,
+            reset_network_application_usage,
             get_bandwidth_limiter_state,
             upsert_bandwidth_limit_rule,
             remove_bandwidth_limit_rule,

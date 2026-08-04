@@ -10,8 +10,8 @@ if (process.platform === 'win32') {
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
   copyFileSync(
-    'native/windows-firewall/out/Release/PulseNetNetworkControl.exe',
-    'native/windows-firewall/out/Release/PulseNetNetworkControl-x86_64-pc-windows-msvc.exe',
+    'native/windows-firewall/out/Build/Release/PulseNetNetworkControl.exe',
+    'native/windows-firewall/out/Build/Release/PulseNetNetworkControl-x86_64-pc-windows-msvc.exe',
   );
 }
 
@@ -19,7 +19,7 @@ const tauriArguments = ['node_modules/@tauri-apps/cli/tauri.js', 'build'];
 if (process.platform === 'win32') {
   tauriArguments.push('--config', JSON.stringify({
     bundle: {
-      externalBin: ['../native/windows-firewall/out/Release/PulseNetNetworkControl'],
+      externalBin: ['../native/windows-firewall/out/Build/Release/PulseNetNetworkControl'],
     },
   }));
 }

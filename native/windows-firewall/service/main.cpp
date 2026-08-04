@@ -2,9 +2,13 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
+#include <iphlpapi.h>
 #include <netfw.h>
 #include <sddl.h>
+#include <tcpestats.h>
 #include <winsvc.h>
 #include <wrl/client.h>
 
@@ -16,13 +20,16 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
 #include "..\shared\pulsenet_network_control.h"
+#include "wfp_blocker.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -36,6 +43,50 @@ struct NetworkRule {
     std::wstring path;
     std::wstring name;
     bool blocked = false;
+};
+
+struct ApplicationUsage {
+    std::wstring path;
+    std::wstring name;
+    uint64_t downloadBytes = 0;
+};
+
+struct TcpConnectionKey {
+    DWORD pid = 0;
+    DWORD localAddress = 0;
+    DWORD localPort = 0;
+    DWORD remoteAddress = 0;
+    DWORD remotePort = 0;
+
+    bool operator==(const TcpConnectionKey& other) const noexcept
+    {
+        return pid == other.pid && localAddress == other.localAddress &&
+            localPort == other.localPort && remoteAddress == other.remoteAddress &&
+            remotePort == other.remotePort;
+    }
+};
+
+struct TcpConnectionKeyHash {
+    size_t operator()(const TcpConnectionKey& value) const noexcept
+    {
+        size_t hash = static_cast<size_t>(value.pid);
+        for (const DWORD part : {
+                 value.localAddress,
+                 value.localPort,
+                 value.remoteAddress,
+                 value.remotePort}) {
+            hash ^= static_cast<size_t>(part) + static_cast<size_t>(0x9e3779b9u) +
+                (hash << 6) + (hash >> 2);
+        }
+        return hash;
+    }
+};
+
+struct TcpConnectionSample {
+    uint64_t receivedBytes = 0;
+    std::wstring usageKey;
+    std::wstring path;
+    std::wstring name;
 };
 
 struct GuidHash {
@@ -63,8 +114,13 @@ SERVICE_STATUS_HANDLE g_statusHandle = nullptr;
 SERVICE_STATUS g_status{};
 HANDLE g_stopEvent = nullptr;
 std::thread g_pipeThread;
+std::thread g_usageThread;
 std::atomic_uint32_t g_activeRuleCount{0};
 std::atomic_bool g_firewallReady{false};
+std::mutex g_usageMutex;
+std::unordered_map<std::wstring, ApplicationUsage> g_applicationUsage;
+std::unordered_map<TcpConnectionKey, TcpConnectionSample, TcpConnectionKeyHash> g_tcpSamples;
+WfpBlocker g_wfpBlocker;
 
 bool ReadExact(HANDLE pipe, void* destination, DWORD size)
 {
@@ -232,7 +288,7 @@ DWORD EnumerateManagedRuleNames(INetFwRules* rules, std::vector<std::wstring>* n
     return ERROR_SUCCESS;
 }
 
-DWORD ReplaceFirewallRules(const std::vector<NetworkRule>& requested)
+DWORD ReplaceClassicFirewallRules(const std::vector<NetworkRule>& requested)
 {
     ComPtr<INetFwRules> rules;
     DWORD result = OpenFirewallRules(&rules);
@@ -271,6 +327,29 @@ DWORD ReplaceFirewallRules(const std::vector<NetworkRule>& requested)
         }
     }
     g_activeRuleCount.store(activeCount, std::memory_order_relaxed);
+    return ERROR_SUCCESS;
+}
+
+DWORD ReplaceNetworkRules(const std::vector<NetworkRule>& requested)
+{
+    std::vector<WfpApplicationRule> blockedRules;
+    blockedRules.reserve(requested.size());
+    for (const auto& rule : requested) {
+        if (rule.blocked) {
+            blockedRules.push_back(WfpApplicationRule{rule.path, rule.name});
+        }
+    }
+
+    const DWORD result = g_wfpBlocker.ReplaceRules(blockedRules);
+    g_firewallReady.store(result == ERROR_SUCCESS, std::memory_order_relaxed);
+    if (result != ERROR_SUCCESS) {
+        return result;
+    }
+
+    // Keep matching Windows Firewall rules for compatibility when its profiles are enabled.
+    ReplaceClassicFirewallRules(requested);
+    g_firewallReady.store(true, std::memory_order_relaxed);
+    g_activeRuleCount.store(static_cast<uint32_t>(blockedRules.size()), std::memory_order_relaxed);
     return ERROR_SUCCESS;
 }
 
@@ -326,6 +405,191 @@ DWORD ParseRules(const std::vector<unsigned char>& payload, std::vector<NetworkR
     return offset == payload.size() ? ERROR_SUCCESS : ERROR_INVALID_DATA;
 }
 
+std::wstring UsageNameFromPath(const std::wstring& path, DWORD pid)
+{
+    const size_t separator = path.find_last_of(L"\\/");
+    const std::wstring name = separator == std::wstring::npos ? path : path.substr(separator + 1);
+    if (!name.empty()) {
+        return name;
+    }
+    if (pid == 4) {
+        return L"System";
+    }
+    return L"PID " + std::to_wstring(pid);
+}
+
+void ResolveProcessIdentity(DWORD pid, std::wstring* path, std::wstring* name)
+{
+    path->clear();
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (process != nullptr) {
+        std::wstring buffer(32768, L'\0');
+        DWORD length = static_cast<DWORD>(buffer.size());
+        if (QueryFullProcessImageNameW(process, 0, buffer.data(), &length) && length > 0) {
+            buffer.resize(length);
+            *path = std::move(buffer);
+        }
+        CloseHandle(process);
+    }
+    *name = UsageNameFromPath(*path, pid);
+}
+
+std::wstring UsageKey(const std::wstring& path, DWORD pid)
+{
+    if (path.empty()) {
+        return L"#pid:" + std::to_wstring(pid);
+    }
+    std::wstring key = path;
+    std::transform(key.begin(), key.end(), key.begin(), [](wchar_t value) {
+        return static_cast<wchar_t>(std::towlower(value));
+    });
+    return key;
+}
+
+MIB_TCPROW BasicTcpRow(const MIB_TCPROW_OWNER_PID& owner)
+{
+    MIB_TCPROW row{};
+    row.dwState = owner.dwState;
+    row.dwLocalAddr = owner.dwLocalAddr;
+    row.dwLocalPort = owner.dwLocalPort;
+    row.dwRemoteAddr = owner.dwRemoteAddr;
+    row.dwRemotePort = owner.dwRemotePort;
+    return row;
+}
+
+bool EnableTcpDataStats(MIB_TCPROW* row)
+{
+    TCP_ESTATS_DATA_RW_v0 settings{};
+    settings.EnableCollection = static_cast<BOOLEAN>(TcpBoolOptEnabled);
+    return SetPerTcpConnectionEStats(
+               row,
+               TcpConnectionEstatsData,
+               reinterpret_cast<PUCHAR>(&settings),
+               0,
+               sizeof(settings),
+               0) == NO_ERROR;
+}
+
+bool ReadTcpReceivedBytes(MIB_TCPROW* row, uint64_t* receivedBytes)
+{
+    TCP_ESTATS_DATA_RW_v0 settings{};
+    TCP_ESTATS_DATA_ROD_v0 data{};
+    const ULONG result = GetPerTcpConnectionEStats(
+        row,
+        TcpConnectionEstatsData,
+        reinterpret_cast<PUCHAR>(&settings),
+        0,
+        sizeof(settings),
+        nullptr,
+        0,
+        0,
+        reinterpret_cast<PUCHAR>(&data),
+        0,
+        sizeof(data));
+    if (result != NO_ERROR || settings.EnableCollection != TcpBoolOptEnabled) {
+        return false;
+    }
+    *receivedBytes = data.DataBytesIn;
+    return true;
+}
+
+void AddApplicationDownload(const TcpConnectionSample& sample, uint64_t bytes)
+{
+    if (bytes == 0) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_usageMutex);
+    ApplicationUsage& usage = g_applicationUsage[sample.usageKey];
+    usage.path = sample.path;
+    usage.name = sample.name;
+    usage.downloadBytes = usage.downloadBytes > std::numeric_limits<uint64_t>::max() - bytes
+        ? std::numeric_limits<uint64_t>::max()
+        : usage.downloadBytes + bytes;
+}
+
+void PollNetworkUsageOnce()
+{
+    DWORD size = 0;
+    const DWORD first = GetExtendedTcpTable(
+        nullptr,
+        &size,
+        FALSE,
+        AF_INET,
+        TCP_TABLE_OWNER_PID_ALL,
+        0);
+    if (first != ERROR_INSUFFICIENT_BUFFER || size < sizeof(MIB_TCPTABLE_OWNER_PID)) {
+        return;
+    }
+    std::vector<unsigned char> buffer(size);
+    if (GetExtendedTcpTable(
+            buffer.data(),
+            &size,
+            FALSE,
+            AF_INET,
+            TCP_TABLE_OWNER_PID_ALL,
+            0) != NO_ERROR) {
+        return;
+    }
+
+    const auto* table = reinterpret_cast<const MIB_TCPTABLE_OWNER_PID*>(buffer.data());
+    std::unordered_map<TcpConnectionKey, TcpConnectionSample, TcpConnectionKeyHash> nextSamples;
+    nextSamples.reserve(table->dwNumEntries);
+    for (DWORD index = 0; index < table->dwNumEntries; ++index) {
+        const MIB_TCPROW_OWNER_PID& owner = table->table[index];
+        if (owner.dwState != MIB_TCP_STATE_ESTAB || owner.dwOwningPid == 0) {
+            continue;
+        }
+
+        const TcpConnectionKey key{
+            owner.dwOwningPid,
+            owner.dwLocalAddr,
+            owner.dwLocalPort,
+            owner.dwRemoteAddr,
+            owner.dwRemotePort};
+        MIB_TCPROW row = BasicTcpRow(owner);
+        const auto previous = g_tcpSamples.find(key);
+        if (previous == g_tcpSamples.end()) {
+            if (!EnableTcpDataStats(&row)) {
+                continue;
+            }
+            uint64_t receivedBytes = 0;
+            if (!ReadTcpReceivedBytes(&row, &receivedBytes)) {
+                continue;
+            }
+            TcpConnectionSample sample{};
+            sample.receivedBytes = receivedBytes;
+            ResolveProcessIdentity(owner.dwOwningPid, &sample.path, &sample.name);
+            sample.usageKey = UsageKey(sample.path, owner.dwOwningPid);
+            nextSamples.emplace(key, std::move(sample));
+            continue;
+        }
+
+        uint64_t receivedBytes = 0;
+        if (!ReadTcpReceivedBytes(&row, &receivedBytes)) {
+            if (!EnableTcpDataStats(&row) || !ReadTcpReceivedBytes(&row, &receivedBytes)) {
+                continue;
+            }
+        }
+        TcpConnectionSample sample = previous->second;
+        if (receivedBytes >= sample.receivedBytes) {
+            AddApplicationDownload(sample, receivedBytes - sample.receivedBytes);
+        }
+        sample.receivedBytes = receivedBytes;
+        nextSamples.emplace(key, std::move(sample));
+    }
+    g_tcpSamples = std::move(nextSamples);
+}
+
+void UsageLoop()
+{
+    while (!g_stopping.load(std::memory_order_relaxed)) {
+        PollNetworkUsageOnce();
+        if (WaitForSingleObject(g_stopEvent, 1000) != WAIT_TIMEOUT) {
+            break;
+        }
+    }
+}
+
 uint32_t StatusFlags()
 {
     uint32_t flags = PulseNetNetworkStatusServiceReady;
@@ -349,6 +613,71 @@ void WriteStatus(HANDLE pipe, const PULSENET_NETWORK_MESSAGE_HEADER& request, DW
     WriteExact(pipe, &response, sizeof(response));
 }
 
+void WriteUsage(HANDLE pipe, const PULSENET_NETWORK_MESSAGE_HEADER& request)
+{
+    std::vector<ApplicationUsage> entries;
+    {
+        std::lock_guard<std::mutex> lock(g_usageMutex);
+        entries.reserve(g_applicationUsage.size());
+        for (const auto& item : g_applicationUsage) {
+            if (item.second.downloadBytes > 0) {
+                entries.push_back(item.second);
+            }
+        }
+    }
+    std::sort(entries.begin(), entries.end(), [](const auto& left, const auto& right) {
+        return left.downloadBytes > right.downloadBytes;
+    });
+    if (entries.size() > 64) {
+        entries.resize(64);
+    }
+
+    std::vector<unsigned char> body;
+    body.reserve(entries.size() * 96);
+    uint32_t writtenEntries = 0;
+    for (const auto& entry : entries) {
+        if (entry.path.size() > PULSENET_NETWORK_MAX_PATH_CHARS ||
+            entry.name.size() > PULSENET_NETWORK_MAX_PATH_CHARS) {
+            continue;
+        }
+        PULSENET_NETWORK_USAGE_ENTRY_WIRE wire{};
+        wire.downloadBytes = entry.downloadBytes;
+        wire.pathChars = static_cast<uint32_t>(entry.path.size());
+        wire.nameChars = static_cast<uint32_t>(entry.name.size());
+        const size_t required = sizeof(wire) +
+            (entry.path.size() + entry.name.size()) * sizeof(wchar_t);
+        if (body.size() + required + sizeof(PULSENET_NETWORK_USAGE_RESPONSE_HEADER) >
+            PULSENET_NETWORK_MAX_MESSAGE_SIZE) {
+            break;
+        }
+        const auto* wireBytes = reinterpret_cast<const unsigned char*>(&wire);
+        body.insert(body.end(), wireBytes, wireBytes + sizeof(wire));
+        const auto appendText = [&body](const std::wstring& value) {
+            const auto* bytes = reinterpret_cast<const unsigned char*>(value.data());
+            body.insert(body.end(), bytes, bytes + value.size() * sizeof(wchar_t));
+        };
+        appendText(entry.path);
+        appendText(entry.name);
+        ++writtenEntries;
+    }
+
+    PULSENET_NETWORK_USAGE_RESPONSE_HEADER response{};
+    response.header.magic = PULSENET_NETWORK_IPC_MAGIC;
+    response.header.protocolVersion = PULSENET_NETWORK_PROTOCOL_VERSION;
+    response.header.command = request.command;
+    response.header.payloadSize = static_cast<uint32_t>(
+        sizeof(response) - sizeof(response.header) + body.size());
+    response.header.requestId = request.requestId;
+    response.statusFlags = StatusFlags();
+    response.win32Error = ERROR_SUCCESS;
+    response.entryCount = writtenEntries;
+
+    WriteExact(pipe, &response, sizeof(response));
+    if (!body.empty()) {
+        WriteExact(pipe, body.data(), static_cast<DWORD>(body.size()));
+    }
+}
+
 void HandleClient(HANDLE pipe)
 {
     PULSENET_NETWORK_MESSAGE_HEADER request{};
@@ -369,15 +698,17 @@ void HandleClient(HANDLE pipe)
 
     DWORD result = ERROR_NOT_SUPPORTED;
     if (request.command == PulseNetNetworkCommandHandshake) {
-        ComPtr<INetFwRules> rules;
-        result = payload.empty() ? OpenFirewallRules(&rules) : ERROR_INVALID_DATA;
+        result = payload.empty() ? g_wfpBlocker.Initialize() : ERROR_INVALID_DATA;
         g_firewallReady.store(result == ERROR_SUCCESS, std::memory_order_relaxed);
     } else if (request.command == PulseNetNetworkCommandReplaceRules) {
         std::vector<NetworkRule> parsed;
         result = ParseRules(payload, &parsed);
         if (result == ERROR_SUCCESS) {
-            result = ReplaceFirewallRules(parsed);
+            result = ReplaceNetworkRules(parsed);
         }
+    } else if (request.command == PulseNetNetworkCommandGetUsage && payload.empty()) {
+        WriteUsage(pipe, request);
+        return;
     }
     WriteStatus(pipe, request, result);
 }
@@ -405,7 +736,7 @@ void PipeLoop()
             PIPE_ACCESS_DUPLEX,
             PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
             PIPE_UNLIMITED_INSTANCES,
-            sizeof(PULSENET_NETWORK_STATUS_RESPONSE),
+            PULSENET_NETWORK_MAX_MESSAGE_SIZE,
             PULSENET_NETWORK_MAX_MESSAGE_SIZE,
             1000,
             &security);
@@ -483,20 +814,122 @@ void WINAPI ServiceMain(DWORD, wchar_t**)
     }
     g_stopping.store(false, std::memory_order_relaxed);
     g_pipeThread = std::thread(PipeLoop);
+    g_usageThread = std::thread(UsageLoop);
     ReportServiceStatus(SERVICE_RUNNING, ERROR_SUCCESS, 0);
     WaitForSingleObject(g_stopEvent, INFINITE);
     if (g_pipeThread.joinable()) g_pipeThread.join();
+    if (g_usageThread.joinable()) g_usageThread.join();
+    g_wfpBlocker.Shutdown();
     CloseHandle(g_stopEvent);
     g_stopEvent = nullptr;
     ReportServiceStatus(SERVICE_STOPPED, ERROR_SUCCESS, 0);
 }
 
+DWORD WaitForServiceState(SC_HANDLE service, DWORD expectedState, DWORD timeoutMs)
+{
+    const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+    while (GetTickCount64() < deadline) {
+        SERVICE_STATUS_PROCESS status{};
+        DWORD bytesNeeded = 0;
+        if (!QueryServiceStatusEx(
+                service,
+                SC_STATUS_PROCESS_INFO,
+                reinterpret_cast<LPBYTE>(&status),
+                sizeof(status),
+                &bytesNeeded)) {
+            return GetLastError();
+        }
+        if (status.dwCurrentState == expectedState) {
+            return ERROR_SUCCESS;
+        }
+        Sleep(100);
+    }
+    return ERROR_TIMEOUT;
+}
+
+DWORD StopServiceForUpdate(SC_HANDLE service)
+{
+    SERVICE_STATUS_PROCESS status{};
+    DWORD bytesNeeded = 0;
+    if (!QueryServiceStatusEx(
+            service,
+            SC_STATUS_PROCESS_INFO,
+            reinterpret_cast<LPBYTE>(&status),
+            sizeof(status),
+            &bytesNeeded)) {
+        return GetLastError();
+    }
+    if (status.dwCurrentState == SERVICE_STOPPED) {
+        return ERROR_SUCCESS;
+    }
+    if (status.dwCurrentState != SERVICE_STOP_PENDING) {
+        SERVICE_STATUS ignored{};
+        if (!ControlService(service, SERVICE_CONTROL_STOP, &ignored) &&
+            GetLastError() != ERROR_SERVICE_NOT_ACTIVE) {
+            return GetLastError();
+        }
+    }
+    return WaitForServiceState(service, SERVICE_STOPPED, 15000);
+}
+
+DWORD PrepareServiceExecutable(std::wstring* executable)
+{
+    std::wstring source(32768, L'\0');
+    const DWORD sourceLength = GetModuleFileNameW(
+        nullptr,
+        source.data(),
+        static_cast<DWORD>(source.size()));
+    if (sourceLength == 0 || sourceLength >= source.size()) {
+        return GetLastError();
+    }
+    source.resize(sourceLength);
+
+    std::wstring programData(32768, L'\0');
+    const DWORD programDataLength = GetEnvironmentVariableW(
+        L"ProgramData",
+        programData.data(),
+        static_cast<DWORD>(programData.size()));
+    if (programDataLength == 0 || programDataLength >= programData.size()) {
+        return GetLastError();
+    }
+    programData.resize(programDataLength);
+
+    const std::wstring productDirectory = programData + L"\\PulseNet";
+    const std::wstring serviceDirectory = productDirectory + L"\\NetworkControl";
+    if (!CreateDirectoryW(productDirectory.c_str(), nullptr) &&
+        GetLastError() != ERROR_ALREADY_EXISTS) {
+        return GetLastError();
+    }
+    if (!CreateDirectoryW(serviceDirectory.c_str(), nullptr) &&
+        GetLastError() != ERROR_ALREADY_EXISTS) {
+        return GetLastError();
+    }
+
+    WIN32_FILE_ATTRIBUTE_DATA attributes{};
+    if (!GetFileAttributesExW(source.c_str(), GetFileExInfoStandard, &attributes)) {
+        return GetLastError();
+    }
+    std::wostringstream fileName;
+    fileName << L"PulseNetNetworkControl-"
+             << std::hex << attributes.ftLastWriteTime.dwHighDateTime
+             << attributes.ftLastWriteTime.dwLowDateTime << L'-'
+             << attributes.nFileSizeHigh << attributes.nFileSizeLow << L".exe";
+    const std::wstring target = serviceDirectory + L"\\" + fileName.str();
+
+    if (_wcsicmp(source.c_str(), target.c_str()) != 0 &&
+        !CopyFileW(source.c_str(), target.c_str(), TRUE) &&
+        GetLastError() != ERROR_FILE_EXISTS) {
+        return GetLastError();
+    }
+    *executable = target;
+    return ERROR_SUCCESS;
+}
+
 DWORD InstallService()
 {
-    std::wstring executable(32768, L'\0');
-    const DWORD length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
-    if (length == 0 || length >= executable.size()) return GetLastError();
-    executable.resize(length);
+    std::wstring executable;
+    const DWORD prepared = PrepareServiceExecutable(&executable);
+    if (prepared != ERROR_SUCCESS) return prepared;
     const std::wstring command = L"\"" + executable + L"\"";
     SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CREATE_SERVICE);
     if (manager == nullptr) return GetLastError();
@@ -505,7 +938,7 @@ DWORD InstallService()
         manager,
         PULSENET_NETWORK_SERVICE_NAME,
         L"PulseNet Network Control",
-        SERVICE_CHANGE_CONFIG | SERVICE_START | SERVICE_QUERY_STATUS | DELETE,
+        SERVICE_CHANGE_CONFIG | SERVICE_START | SERVICE_STOP | SERVICE_QUERY_STATUS | DELETE,
         SERVICE_WIN32_OWN_PROCESS,
         SERVICE_AUTO_START,
         SERVICE_ERROR_NORMAL,
@@ -516,11 +949,13 @@ DWORD InstallService()
         nullptr,
         nullptr);
     DWORD result = ERROR_SUCCESS;
+    bool serviceExisted = false;
     if (service == nullptr && GetLastError() == ERROR_SERVICE_EXISTS) {
+        serviceExisted = true;
         service = OpenServiceW(
             manager,
             PULSENET_NETWORK_SERVICE_NAME,
-            SERVICE_CHANGE_CONFIG | SERVICE_START | SERVICE_QUERY_STATUS);
+            SERVICE_CHANGE_CONFIG | SERVICE_START | SERVICE_STOP | SERVICE_QUERY_STATUS);
         if (service != nullptr && !ChangeServiceConfigW(
                 service,
                 SERVICE_NO_CHANGE,
@@ -542,8 +977,15 @@ DWORD InstallService()
         SERVICE_DESCRIPTIONW description{};
         description.lpDescription = const_cast<wchar_t*>(L"Manages PulseNet per-application Windows Firewall rules.");
         ChangeServiceConfig2W(service, SERVICE_CONFIG_DESCRIPTION, &description);
-        if (!StartServiceW(service, 0, nullptr) && GetLastError() != ERROR_SERVICE_ALREADY_RUNNING) {
+        if (result == ERROR_SUCCESS && serviceExisted) {
+            result = StopServiceForUpdate(service);
+        }
+        if (result == ERROR_SUCCESS &&
+            !StartServiceW(service, 0, nullptr) && GetLastError() != ERROR_SERVICE_ALREADY_RUNNING) {
             result = GetLastError();
+        }
+        if (result == ERROR_SUCCESS) {
+            result = WaitForServiceState(service, SERVICE_RUNNING, 15000);
         }
         CloseServiceHandle(service);
     }
@@ -555,7 +997,7 @@ DWORD UninstallService()
 {
     const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (SUCCEEDED(comResult)) {
-        ReplaceFirewallRules({});
+        ReplaceNetworkRules({});
         CoUninitialize();
     }
     SC_HANDLE manager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);

@@ -9,7 +9,8 @@
 
 typedef enum _PULSENET_NETWORK_COMMAND {
     PulseNetNetworkCommandHandshake = 1,
-    PulseNetNetworkCommandReplaceRules = 3
+    PulseNetNetworkCommandReplaceRules = 3,
+    PulseNetNetworkCommandGetUsage = 4
 } PULSENET_NETWORK_COMMAND;
 
 typedef enum _PULSENET_NETWORK_STATUS_FLAGS {
@@ -50,5 +51,20 @@ typedef struct _PULSENET_NETWORK_RULE_WIRE {
     UINT32 nameChars;
     UINT32 reserved;
 } PULSENET_NETWORK_RULE_WIRE;
+
+typedef struct _PULSENET_NETWORK_USAGE_RESPONSE_HEADER {
+    PULSENET_NETWORK_MESSAGE_HEADER header;
+    UINT32 statusFlags;
+    UINT32 win32Error;
+    UINT32 entryCount;
+    UINT32 reserved;
+} PULSENET_NETWORK_USAGE_RESPONSE_HEADER;
+
+typedef struct _PULSENET_NETWORK_USAGE_ENTRY_WIRE {
+    UINT64 downloadBytes;
+    UINT32 pathChars;
+    UINT32 nameChars;
+    UINT32 reserved;
+} PULSENET_NETWORK_USAGE_ENTRY_WIRE;
 
 #pragma pack(pop)
