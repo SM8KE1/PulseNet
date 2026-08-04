@@ -1230,18 +1230,20 @@ fn bandwidth_limiter_state(app: &tauri::AppHandle) -> Result<BandwidthLimiterSta
         let data = serde_json::to_vec_pretty(&rules).map_err(|error| error.to_string())?;
         write_linux_network_rules(&data)?;
     }
-    let mut engine = bandwidth_limiter_engine_status();
+    let engine = bandwidth_limiter_engine_status();
     #[cfg(target_os = "windows")]
-    if engine.running {
-        engine = match replace_limiter_rules(&rules) {
+    let engine = if engine.running {
+        match replace_limiter_rules(&rules) {
             Ok(response) => apply_limiter_response(engine, response),
             Err(_) => BandwidthLimiterEngineStatus {
                 ready: false,
                 message: "service-sync-failed".to_string(),
                 ..engine
             },
-        };
-    }
+        }
+    } else {
+        engine
+    };
     Ok(BandwidthLimiterState { engine, rules })
 }
 
@@ -1524,14 +1526,14 @@ fn merge_network_application_usage_history(
         .into_iter()
         .filter(|application| application.total_download_bytes > 0)
         .map(|application| {
-            let mut icon_data_url = current_icons.remove(&application.key).flatten();
+            let icon_data_url = current_icons.remove(&application.key).flatten();
             #[cfg(target_os = "windows")]
-            if icon_data_url.is_none() {
-                icon_data_url = application
+            let icon_data_url = icon_data_url.or_else(|| {
+                application
                     .path
                     .as_deref()
-                    .and_then(windows_process_icon_data_url);
-            }
+                    .and_then(windows_process_icon_data_url)
+            });
             NetworkApplicationUsage {
                 name: application.name,
                 path: application.path,
@@ -2429,7 +2431,7 @@ fn linux_nm_active_connection(
         let ip4_path = device_proxy
             .get::<DbusPath<'static>>(NM_DEVICE_IFACE, "Ip4Config")
             .ok();
-        if let Some(ip4_path) = ip4_path.filter(|path| path.as_ref() != "/") {
+        if let Some(ip4_path) = ip4_path.filter(|path| path.to_string() != "/") {
             let details = linux_nm_ip4_config(conn, &ip4_path);
             dns = details.0;
             ipv4 = details.1;
