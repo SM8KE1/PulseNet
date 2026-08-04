@@ -1,0 +1,42 @@
+[Version]
+Signature="$WINDOWS NT$"
+Class=NetService
+ClassGuid={4D36E974-E325-11CE-BFC1-08002BE10318}
+Provider=%ProviderName%
+CatalogFile=PulseNetWfp.cat
+DriverVer=08/04/2026,1.6.2.0
+PnpLockdown=1
+
+[DefaultInstall.NTamd64]
+CopyFiles=DriverCopyFiles
+
+[DefaultInstall.NTamd64.Services]
+AddService=PulseNetWfp,,DriverService
+
+[DestinationDirs]
+DriverCopyFiles=12
+
+[DriverCopyFiles]
+PulseNetWfp.sys
+
+[DriverService]
+DisplayName=%ServiceDisplayName%
+Description=%ServiceDescription%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\PulseNetWfp.sys
+LoadOrderGroup=Network
+Dependencies=BFE
+
+[SourceDisksNames]
+1=%DiskName%,,,
+
+[SourceDisksFiles]
+PulseNetWfp.sys=1
+
+[Strings]
+ProviderName="PulseNet"
+ServiceDisplayName="PulseNet WFP Callout Driver"
+ServiceDescription="Redirects selected application flows to the PulseNet bandwidth limiter service."
+DiskName="PulseNet Driver Installation Media"

@@ -4,7 +4,7 @@
   "description": "Ping Monitoring",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "node scripts/build-platform.mjs",
     "dev:ui": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build:ui": "vite build"
   },

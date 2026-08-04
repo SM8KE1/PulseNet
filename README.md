@@ -21,6 +21,7 @@ It provides ping monitoring, DNS testing and management, speed testing, logs, an
 - Log page with filters, search, export, and summary cards
 - Settings and About pages with refreshed UI
 - Sidebar donation shortcut for `https://daramet.com/SM0KE`
+- Per-application network control: Windows Firewall block/unblock and Linux cgroup/nftables block/rate rules
 
 ## Version 1.6.2
 
@@ -50,7 +51,7 @@ For Arch-based systems:
 ```bash
 git clone https://github.com/SM8KE1/PulseNet.git
 cd PulseNet
-sudo pacman -S --needed base-devel git nodejs npm rust cargo gtk3 libayatana-appindicator librsvg networkmanager openssl polkit webkit2gtk-4.1
+sudo pacman -S --needed base-devel git nodejs npm rust cargo gtk3 libayatana-appindicator librsvg networkmanager nftables openssl polkit webkit2gtk-4.1
 cd packaging/arch
 makepkg -si
 pulsenet
@@ -62,8 +63,10 @@ For reliable ICMP ping behavior on Windows, run PulseNet with administrator priv
 
 ## Linux Notes
 
-Linux DNS Manager support uses NetworkManager through `nmcli`.
-For applying or resetting DNS, the system must allow NetworkManager changes through the active user session or Polkit/`pkexec`.
+Linux DNS Manager support uses the NetworkManager D-Bus API directly. The app should be launched as a normal user; NetworkManager/Polkit handles authorization only when DNS settings are changed.
+Linux Network Usage reads active adapter state through NetworkManager D-Bus and traffic/process data from `/sys` and `/proc`, without shelling out to `nmcli`.
+Linux installer packages set `cap_net_raw` on the installed PulseNet binary so ICMP ping can work without launching the whole GUI with `sudo`.
+Linux packages install a root systemd helper once. The GUI stays unprivileged while the helper validates per-user executable paths, assigns matching processes to cgroup v2, and applies isolated nftables block/rate rules.
 Linux builds use Tauri v2 and WebKitGTK 4.1, which is compatible with Ubuntu 24.04 and current Debian-based distributions.
 On Arch-based systems, the native package launcher sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` by default to avoid common WebKitGTK EGL/DMABUF startup issues.
 
@@ -89,6 +92,8 @@ npm run build
 - `src/renderer` -> React UI
 - `src-tauri/src/main.rs` -> Tauri backend
 - `src-tauri/tauri.conf.json` -> app/window/bundle config
+- `native/windows-firewall` -> public user-mode Windows Firewall service
+- `experimental/windows-wfp` -> excluded WFP driver prototype
 
 ## License
 

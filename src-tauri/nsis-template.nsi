@@ -783,13 +783,20 @@ Section Install
     CreateDirectory "$INSTDIR\\{{this}}"
   {{/each}}
   {{#each resources}}
-    File /a "/oname={{this.[1]}}" "{{unescape-dollar-sign @key}}"
+    File /a "/oname={{this.[1]}}" "{{no-escape @key}}"
   {{/each}}
 
   ; Copy external binaries
   {{#each binaries}}
-    File /a "/oname={{this}}" "{{unescape-dollar-sign @key}}"
+    File /a "/oname={{this}}" "{{no-escape @key}}"
   {{/each}}
+
+  ; Install or update the user-mode network control service. No kernel driver is used.
+  nsExec::ExecToLog '"$INSTDIR\PulseNetNetworkControl.exe" install'
+  Pop $R0
+  ${If} $R0 != 0
+    DetailPrint "PulseNet network control service setup returned $R0"
+  ${EndIf}
 
   ; Create uninstaller
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -894,6 +901,10 @@ FunctionEnd
 
 Section Uninstall
   !insertmacro CheckIfAppIsRunning
+
+  ; Stop and remove the service before deleting its executable.
+  nsExec::ExecToLog '"$INSTDIR\PulseNetNetworkControl.exe" uninstall'
+  Pop $R0
 
   ; Delete the app directory and its content from disk
   ; Copy main executable

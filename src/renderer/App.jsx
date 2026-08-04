@@ -17,6 +17,7 @@ import pingIcon from '../../assets/ping.svg';
 import playIcon from '../../assets/play.svg';
 import pauseIcon from '../../assets/pause.svg';
 import speedIcon from '../../assets/speed.svg';
+import nusageIcon from '../../assets/nusage.svg';
 import logIcon from '../../assets/log.svg';
 import settingIcon from '../../assets/setting.svg';
 import aboutIcon from '../../assets/about.svg';
@@ -49,6 +50,13 @@ const DRAG_OVERLAY_DROP_ANIMATION = {
 const PING_GOOD_THRESHOLD_MS = 120;
 const SPEED_PHASE_DOWNLOAD_DELAY_MS = 1200;
 const DONATE_NUDGE_DELAY_MS = 2 * 60 * 1000;
+const NETWORK_PROCESS_PREVIEW_LIMIT = 4;
+const BANDWIDTH_UNIT_FACTORS = {
+  kbps: 1000,
+  mbps: 1000000,
+  kbytes: 8000,
+  mbytes: 8000000,
+};
 const DEFAULT_HOSTS = [
   { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
   { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
@@ -57,6 +65,28 @@ const DEFAULT_HOSTS = [
 ];
 
 const getDnsAdapterKey = (adapter) => adapter?.id || adapter?.name || '';
+
+const getNetworkProcessCategory = (process) => {
+  const name = String(process?.name || '').toLowerCase();
+  const path = String(process?.path || '').toLowerCase();
+  const text = `${name} ${path}`;
+  if (!name || name.startsWith('pid ')) return 'unknown';
+  if (/(chrome|firefox|msedge|edge|brave|opera|vivaldi|iexplore|browser)/.test(text)) return 'browsers';
+  if (/(system|svchost|services|lsass|csrss|wininit|winlogon|dwm|spoolsv|dns|dhcp|ntoskrnl|registry|runtimebroker|searchhost)/.test(text)) return 'system';
+  return 'apps';
+};
+
+const getNetworkProcessStatus = (connections) => {
+  const value = Number(connections || 0);
+  if (value >= 20) return 'high';
+  if (value >= 3) return 'normal';
+  return 'idle';
+};
+
+const shouldGroupNetworkProcess = (process) => {
+  const name = String(process?.name || '').toLowerCase();
+  return getNetworkProcessCategory(process) === 'system' || name === 'svchost' || name === 'svchost.exe';
+};
 
 const HOST_PROFILES = {
   gaming: [
@@ -89,6 +119,30 @@ const maskIpAddress = (ip) => {
   const value = String(ip || '').trim();
   if (!value || value === 'N/A') return 'N/A';
   return value.includes(':') ? '••••:••••:••••:••••' : '•••.•••.•••.•••';
+};
+
+const formatBytes = (bytes) => {
+  const value = Number(bytes) || 0;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = Math.max(0, value);
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  const digits = size >= 100 || unitIndex === 0 ? 0 : size >= 10 ? 1 : 2;
+  return `${size.toFixed(digits)} ${units[unitIndex]}`;
+};
+
+const formatByteRate = (bytesPerSecond) => `${formatBytes(bytesPerSecond)}/s`;
+
+const normalizeLimiterPath = (path) => String(path || '').trim().replace(/\//g, '\\').toLowerCase();
+
+const formatBandwidthLimit = (bitsPerSecond) => {
+  const value = Number(bitsPerSecond || 0);
+  if (!value) return '--';
+  if (value >= 1000000) return `${(value / 1000000).toFixed(value >= 10000000 ? 0 : 1)} Mbps`;
+  return `${Math.round(value / 1000)} Kbps`;
 };
 
 const getDefaultHosts = () => DEFAULT_HOSTS.map((host) => ({ ...host }));
@@ -154,9 +208,11 @@ const useHosts = () => {
 
   const addHost = (host) => {
     const newHost = { type: 'custom', id: Date.now(), pinned: false, paused: false, ...host };
-    const newHosts = [newHost, ...allHosts];
-    setAllHosts(newHosts);
-    localStorage.setItem('allHosts', JSON.stringify(newHosts));
+    setAllHosts((prevHosts) => {
+      const newHosts = [newHost, ...prevHosts];
+      localStorage.setItem('allHosts', JSON.stringify(newHosts));
+      return newHosts;
+    });
   };
 
   return { allHosts, setAllHosts, addHost };
@@ -424,9 +480,11 @@ const SortableItem = ({
   }, [onLog, isEditMode, hasError, errorKind, timeMs, pingAlertThresholdMs, packetLossAlertThreshold, lossPercent, sampleCount, label, host, status, texts]);
 
   const handleSave = () => {
-    if (editLabel.trim() && editHost.trim()) {
-      onSave(editLabel.trim(), editHost.trim());
-    }
+    const normalizedHost = editHost.trim();
+    if (!normalizedHost) return;
+
+    const normalizedLabel = editLabel.trim() || normalizedHost;
+    onSave(normalizedLabel, normalizedHost);
   };
 
   const handleCancel = () => {
@@ -732,6 +790,7 @@ const App = () => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved ? saved === 'true' : true;
   });
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -757,6 +816,18 @@ const App = () => {
   const [speedLoading, setSpeedLoading] = useState(false);
   const [speedPhase, setSpeedPhase] = useState('idle');
   const [speedProvider, setSpeedProvider] = useState(() => localStorage.getItem('speedProvider') || 'cloudflare');
+  const [networkSnapshot, setNetworkSnapshot] = useState(null);
+  const [previousNetworkSnapshot, setPreviousNetworkSnapshot] = useState(null);
+  const [networkLoading, setNetworkLoading] = useState(false);
+  const [networkError, setNetworkError] = useState('');
+  const [networkProcessSearch, setNetworkProcessSearch] = useState('');
+  const [showAllNetworkProcesses, setShowAllNetworkProcesses] = useState(false);
+  const [expandedNetworkProcesses, setExpandedNetworkProcesses] = useState({});
+  const [bandwidthLimiterState, setBandwidthLimiterState] = useState({ engine: null, rules: [] });
+  const [bandwidthLimitModalProcess, setBandwidthLimitModalProcess] = useState(null);
+  const [bandwidthLimitForm, setBandwidthLimitForm] = useState({ download: '', upload: '', unit: 'mbps', blocked: false });
+  const [bandwidthLimitSaving, setBandwidthLimitSaving] = useState(false);
+  const [bandwidthLimitFeedback, setBandwidthLimitFeedback] = useState('');
   const [publicNetworkInfo, setPublicNetworkInfo] = useState({
     ip: 'N/A',
     country: 'N/A',
@@ -859,6 +930,7 @@ const App = () => {
   const lastOverIdRef = useRef(null);
   const lenisRef = useRef(null);
   const publicIpFetchInFlightRef = useRef(false);
+  const networkUsageInFlightRef = useRef(false);
 
   // dnd-kit sensors
   const sensors = useSensors(
@@ -987,6 +1059,46 @@ const App = () => {
       setIsPublicIpLoading(false);
     }
   }, [addLogEntry]);
+
+  const loadNetworkUsage = useCallback(async () => {
+    if (networkUsageInFlightRef.current) return;
+    networkUsageInFlightRef.current = true;
+    setNetworkLoading(true);
+    try {
+      const result = await invoke('get_network_usage_snapshot');
+      setNetworkSnapshot((current) => {
+        const resultTimestamp = Number(result?.timestampMs || 0);
+        const currentTimestamp = Number(current?.timestampMs || 0);
+        if (current && resultTimestamp && currentTimestamp && resultTimestamp <= currentTimestamp) {
+          return current;
+        }
+        if (current) {
+          setPreviousNetworkSnapshot(current);
+        }
+        return result;
+      });
+      setNetworkError(result?.error || '');
+    } catch (error) {
+      console.error('Failed to load network usage:', error);
+      setNetworkError(String(error || 'network-usage-failed'));
+    } finally {
+      networkUsageInFlightRef.current = false;
+      setNetworkLoading(false);
+    }
+  }, []);
+
+  const loadBandwidthLimiterState = useCallback(async () => {
+    try {
+      const result = await invoke('get_bandwidth_limiter_state');
+      setBandwidthLimiterState({
+        engine: result?.engine || null,
+        rules: Array.isArray(result?.rules) ? result.rules : [],
+      });
+    } catch (error) {
+      console.error('Failed to load bandwidth limiter state:', error);
+      setBandwidthLimitFeedback(String(error || 'bandwidth-limiter-state-failed'));
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1132,6 +1244,14 @@ const App = () => {
       window.clearInterval(intervalId);
     };
   }, [loadPublicNetworkInfo]);
+
+  useEffect(() => {
+    if (currentPage !== 'network') return undefined;
+    loadNetworkUsage();
+    loadBandwidthLimiterState();
+    const intervalId = window.setInterval(loadNetworkUsage, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [currentPage, loadBandwidthLimiterState, loadNetworkUsage]);
 
   useEffect(() => {
     const nextIp = String(speedMetrics?.ip || '').trim();
@@ -1859,22 +1979,50 @@ const App = () => {
 
   useEffect(() => {
     const minimizeBtn = document.getElementById('minimize-button');
+    const maximizeBtn = document.getElementById('maximize-button');
     const closeBtn = document.getElementById('close-button');
     const githubBtn = document.getElementById('github-button');
     const handleMinimize = () => invoke('perform_close_action', { action: 'minimize' });
+    const handleMaximize = () => {
+      invoke('toggle_window_maximize')
+        .then((maximized) => setIsWindowMaximized(Boolean(maximized)))
+        .catch(() => {});
+    };
     const handleClose = () => requestCloseFlow();
     const handleGithub = () => openUrl('https://github.com/SM8KE1/PulseNet');
 
     minimizeBtn.addEventListener('click', handleMinimize);
+    maximizeBtn.addEventListener('click', handleMaximize);
     closeBtn.addEventListener('click', handleClose);
     githubBtn.addEventListener('click', handleGithub);
 
     return () => {
       minimizeBtn.removeEventListener('click', handleMinimize);
+      maximizeBtn.removeEventListener('click', handleMaximize);
       closeBtn.removeEventListener('click', handleClose);
       githubBtn.removeEventListener('click', handleGithub);
     };
   }, [requestCloseFlow]);
+
+  useEffect(() => {
+    let unlistenMaximized;
+
+    invoke('is_window_maximized')
+      .then((maximized) => setIsWindowMaximized(Boolean(maximized)))
+      .catch(() => {});
+
+    listen('window-maximized-changed', (event) => {
+      setIsWindowMaximized(Boolean(event.payload));
+    })
+      .then((unlisten) => {
+        unlistenMaximized = unlisten;
+      })
+      .catch(() => {});
+
+    return () => {
+      if (unlistenMaximized) unlistenMaximized();
+    };
+  }, []);
 
   useEffect(() => {
     const shown = localStorage.getItem('adminNoticeShown');
@@ -1932,6 +2080,19 @@ const App = () => {
       lenis.start();
     }
   }, [activeDragId]);
+
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (lenisRef.current) {
+        lenisRef.current.scrollTo(0, { immediate: true, force: true });
+      }
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = 0;
+      }
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [currentPage]);
 
   useEffect(() => {
     let unlistenClose;
@@ -2114,6 +2275,69 @@ const App = () => {
       dnsToolTest: 'DNS Test',
       dnsToolManager: 'DNS Manager',
       speedTest: 'Speed Test',
+      networkUsage: 'Network Usage',
+      networkMonitorSubtitle: 'Live adapter traffic and active network processes',
+      networkDownloadLive: 'Download now',
+      networkUploadLive: 'Upload now',
+      networkTotalReceived: 'Total received',
+      networkTotalSent: 'Total sent',
+      networkAdapters: 'Adapters',
+      networkProcesses: 'Active processes',
+      networkRefresh: 'Refresh',
+      networkRefreshing: 'Refreshing...',
+      networkNoAdapters: 'No adapter data',
+      networkNoProcesses: 'No active process data',
+      networkProcess: 'Process',
+      networkPid: 'PID',
+      networkConnections: 'Connections',
+      networkRemote: 'Remote',
+      networkPath: 'Path',
+      networkSearchProcesses: 'Search process or remote IP...',
+      networkCategoryMain: 'Applications',
+      networkCategoryBrowsers: 'Browsers',
+      networkCategoryApps: 'Apps',
+      networkCategorySystem: 'System',
+      networkCategoryUnknown: 'Unknown',
+      networkStatusHigh: 'High activity',
+      networkStatusNormal: 'Normal',
+      networkStatusIdle: 'Idle',
+      networkGroupedPids: 'Grouped PIDs',
+      networkDetails: 'Details',
+      networkHideDetails: 'Hide',
+      networkShowMoreProcesses: 'Show more',
+      networkShowLessProcesses: 'Show less',
+      networkNoProcessMatches: 'No matching processes',
+      networkUnavailable: 'Network usage data is not available.',
+      networkLinuxProcessNote: 'Per-process usage is currently available on Windows. Linux shows total adapter traffic in this version.',
+      limiterTitle: 'Bandwidth limit',
+      limiterSetLimit: 'Set limit',
+      limiterEditLimit: 'Edit limit',
+      limiterActive: 'Limited',
+      limiterStaged: 'Staged',
+      limiterEngineReady: 'Network control ready',
+      limiterSetupRequired: 'Network control setup required',
+      limiterServiceStopped: 'Network control service is stopped',
+      limiterServicePreparing: 'Network control service is preparing',
+      limiterStagedHint: 'Install the PulseNet network control helper once to activate these rules.',
+      limiterBlockInternet: 'Block internet',
+      limiterUnblockInternet: 'Unblock internet',
+      limiterBlocked: 'Blocked',
+      limiterBlockSaved: 'Internet access blocked',
+      limiterDownload: 'Download limit',
+      limiterUpload: 'Upload limit',
+      limiterOptional: 'Optional',
+      limiterUnit: 'Unit',
+      limiterApply: 'Save rule',
+      limiterRemove: 'Remove limit',
+      limiterCancel: 'Cancel',
+      limiterSaved: 'Bandwidth rule saved',
+      limiterRemoved: 'Bandwidth rule removed',
+      limiterRequired: 'Enter at least one download or upload limit.',
+      limiterNoPath: 'An executable path is required for app limits.',
+      limiterKbps: 'Kbps',
+      limiterMbps: 'Mbps',
+      limiterKBps: 'KB/s',
+      limiterMBps: 'MB/s',
       alerts: 'Log',
       settings: 'Settings',
       logAll: 'All',
@@ -2333,6 +2557,69 @@ const App = () => {
       dnsToolTest: '\u062a\u0633\u062a DNS',
       dnsToolManager: '\u0645\u062f\u06cc\u0631 DNS',
       speedTest: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
+      networkUsage: 'مصرف شبکه',
+      networkMonitorSubtitle: 'نمایش زنده ترافیک آداپتورها و پردازش‌های فعال شبکه',
+      networkDownloadLive: 'دانلود لحظه‌ای',
+      networkUploadLive: 'آپلود لحظه‌ای',
+      networkTotalReceived: 'کل دریافت',
+      networkTotalSent: 'کل ارسال',
+      networkAdapters: 'آداپتورها',
+      networkProcesses: 'پردازش‌های فعال',
+      networkRefresh: 'به‌روزرسانی',
+      networkRefreshing: 'در حال به‌روزرسانی...',
+      networkNoAdapters: 'داده‌ای از آداپتور وجود ندارد',
+      networkNoProcesses: 'داده‌ای از پردازش فعال وجود ندارد',
+      networkProcess: 'پردازش',
+      networkPid: 'PID',
+      networkConnections: 'اتصال‌ها',
+      networkRemote: 'ریموت',
+      networkPath: 'مسیر',
+      networkSearchProcesses: 'جستجوی پردازش یا IP ریموت...',
+      networkCategoryMain: 'برنامه‌ها',
+      networkCategoryBrowsers: 'مرورگرها',
+      networkCategoryApps: 'برنامه‌ها',
+      networkCategorySystem: 'سیستم',
+      networkCategoryUnknown: 'نامشخص',
+      networkStatusHigh: 'فعالیت بالا',
+      networkStatusNormal: 'عادی',
+      networkStatusIdle: 'کم‌فعال',
+      networkGroupedPids: 'PIDهای گروه‌شده',
+      networkDetails: 'جزئیات',
+      networkHideDetails: 'بستن',
+      networkShowMoreProcesses: 'نمایش بیشتر',
+      networkShowLessProcesses: 'نمایش کمتر',
+      networkNoProcessMatches: 'پردازشی مطابق جستجو پیدا نشد',
+      networkUnavailable: 'داده مصرف شبکه در دسترس نیست.',
+      networkLinuxProcessNote: 'مصرف به تفکیک پردازش فعلا روی ویندوز فعال است. در لینوکس، این نسخه ترافیک کلی آداپتورها را نشان می‌دهد.',
+      limiterTitle: 'محدودیت پهنای باند',
+      limiterSetLimit: 'اعمال محدودیت',
+      limiterEditLimit: 'ویرایش محدودیت',
+      limiterActive: 'محدودشده',
+      limiterStaged: 'در انتظار راه‌اندازی',
+      limiterEngineReady: 'کنترل شبکه آماده است',
+      limiterSetupRequired: 'راه‌اندازی کنترل شبکه لازم است',
+      limiterServiceStopped: 'سرویس کنترل شبکه متوقف است',
+      limiterServicePreparing: 'سرویس کنترل شبکه در حال آماده‌سازی است',
+      limiterStagedHint: 'برای فعال‌شدن قانون‌ها، ابزار کنترل شبکه PulseNet را یک‌بار نصب کنید.',
+      limiterBlockInternet: 'قطع اینترنت',
+      limiterUnblockInternet: 'وصل اینترنت',
+      limiterBlocked: 'قطع‌شده',
+      limiterBlockSaved: 'دسترسی اینترنت برنامه قطع شد',
+      limiterDownload: 'محدودیت دانلود',
+      limiterUpload: 'محدودیت آپلود',
+      limiterOptional: 'اختیاری',
+      limiterUnit: 'واحد',
+      limiterApply: 'ذخیره قانون',
+      limiterRemove: 'حذف محدودیت',
+      limiterCancel: 'انصراف',
+      limiterSaved: 'قانون پهنای باند ذخیره شد',
+      limiterRemoved: 'محدودیت حذف شد',
+      limiterRequired: 'حداقل مقدار دانلود یا آپلود را وارد کنید.',
+      limiterNoPath: 'برای محدودسازی برنامه، مسیر فایل اجرایی لازم است.',
+      limiterKbps: 'Kbps',
+      limiterMbps: 'Mbps',
+      limiterKBps: 'KB/s',
+      limiterMBps: 'MB/s',
       alerts: '\u0644\u0627\u06af',
       settings: '\u062a\u0646\u0638\u06cc\u0645\u0627\u062a',
       logAll: '\u0647\u0645\u0647',
@@ -2548,6 +2835,149 @@ const App = () => {
     return isPersian ? fa : en;
   }, [isPersian]);
 
+  const bandwidthRulesByPath = useMemo(() => {
+    const entries = (bandwidthLimiterState.rules || []).map((rule) => [
+      normalizeLimiterPath(rule.executablePath),
+      rule,
+    ]);
+    return new Map(entries);
+  }, [bandwidthLimiterState.rules]);
+
+  const networkControlIsWindows = bandwidthLimiterState.engine?.platform === 'windows';
+
+  const handleToggleApplicationBlock = useCallback(async (process) => {
+    const executablePath = (process?.paths || [])[0] || '';
+    if (!executablePath) {
+      setBandwidthLimitFeedback(texts.limiterNoPath);
+      return;
+    }
+    const existing = bandwidthRulesByPath.get(normalizeLimiterPath(executablePath));
+    setBandwidthLimitSaving(true);
+    setBandwidthLimitFeedback('');
+    try {
+      const result = existing?.blocked
+        ? await invoke('remove_bandwidth_limit_rule', { executablePath })
+        : await invoke('upsert_bandwidth_limit_rule', {
+          rule: {
+            executablePath,
+            processName: process.name,
+            downloadLimitBps: null,
+            uploadLimitBps: null,
+            blocked: true,
+            enabled: true,
+          },
+        });
+      setBandwidthLimiterState({ engine: result?.engine || null, rules: result?.rules || [] });
+      setBandwidthLimitFeedback(existing?.blocked ? texts.limiterRemoved : texts.limiterBlockSaved);
+    } catch (error) {
+      setBandwidthLimitFeedback(String(error || 'network-control-update-failed'));
+    } finally {
+      setBandwidthLimitSaving(false);
+    }
+  }, [bandwidthRulesByPath, texts.limiterBlockSaved, texts.limiterNoPath, texts.limiterRemoved]);
+
+  const openBandwidthLimitModal = useCallback((process) => {
+    const executablePath = (process?.paths || [])[0] || '';
+    if (!executablePath) {
+      setBandwidthLimitFeedback(texts.limiterNoPath);
+      return;
+    }
+    const existing = bandwidthRulesByPath.get(normalizeLimiterPath(executablePath));
+    const factor = BANDWIDTH_UNIT_FACTORS.mbps;
+    const inputValue = (value) => {
+      if (!value) return '';
+      return String(Number((Number(value) / factor).toFixed(3)));
+    };
+    setBandwidthLimitForm({
+      download: inputValue(existing?.downloadLimitBps),
+      upload: inputValue(existing?.uploadLimitBps),
+      unit: 'mbps',
+      blocked: Boolean(existing?.blocked),
+    });
+    setBandwidthLimitFeedback('');
+    setBandwidthLimitModalProcess({ ...process, executablePath, existingRule: existing || null });
+  }, [bandwidthRulesByPath, texts.limiterNoPath]);
+
+  const closeBandwidthLimitModal = useCallback(() => {
+    if (bandwidthLimitSaving) return;
+    setBandwidthLimitModalProcess(null);
+    setBandwidthLimitFeedback('');
+  }, [bandwidthLimitSaving]);
+
+  const handleBandwidthLimitUnitChange = useCallback((nextUnit) => {
+    setBandwidthLimitForm((current) => {
+      const currentFactor = BANDWIDTH_UNIT_FACTORS[current.unit] || BANDWIDTH_UNIT_FACTORS.mbps;
+      const nextFactor = BANDWIDTH_UNIT_FACTORS[nextUnit] || BANDWIDTH_UNIT_FACTORS.mbps;
+      const convert = (value) => {
+        if (value === '') return '';
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return value;
+        return String(Number(((parsed * currentFactor) / nextFactor).toFixed(3)));
+      };
+      return {
+        download: convert(current.download),
+        upload: convert(current.upload),
+        unit: nextUnit,
+        blocked: current.blocked,
+      };
+    });
+  }, []);
+
+  const handleSaveBandwidthLimit = useCallback(async () => {
+    if (!bandwidthLimitModalProcess) return;
+    const factor = BANDWIDTH_UNIT_FACTORS[bandwidthLimitForm.unit] || BANDWIDTH_UNIT_FACTORS.mbps;
+    const toBitsPerSecond = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * factor) : null;
+    };
+    const downloadLimitBps = toBitsPerSecond(bandwidthLimitForm.download);
+    const uploadLimitBps = toBitsPerSecond(bandwidthLimitForm.upload);
+    if (!bandwidthLimitForm.blocked && !downloadLimitBps && !uploadLimitBps) {
+      setBandwidthLimitFeedback(texts.limiterRequired);
+      return;
+    }
+
+    setBandwidthLimitSaving(true);
+    setBandwidthLimitFeedback('');
+    try {
+      const result = await invoke('upsert_bandwidth_limit_rule', {
+        rule: {
+          executablePath: bandwidthLimitModalProcess.executablePath,
+          processName: bandwidthLimitModalProcess.name,
+          downloadLimitBps,
+          uploadLimitBps,
+          blocked: bandwidthLimitForm.blocked,
+          enabled: true,
+        },
+      });
+      setBandwidthLimiterState({ engine: result?.engine || null, rules: result?.rules || [] });
+      setBandwidthLimitModalProcess(null);
+      setBandwidthLimitFeedback(texts.limiterSaved);
+    } catch (error) {
+      setBandwidthLimitFeedback(String(error || 'bandwidth-limit-save-failed'));
+    } finally {
+      setBandwidthLimitSaving(false);
+    }
+  }, [bandwidthLimitForm, bandwidthLimitModalProcess, texts.limiterRequired, texts.limiterSaved]);
+
+  const handleRemoveBandwidthLimit = useCallback(async () => {
+    if (!bandwidthLimitModalProcess?.executablePath) return;
+    setBandwidthLimitSaving(true);
+    setBandwidthLimitFeedback('');
+    try {
+      const result = await invoke('remove_bandwidth_limit_rule', {
+        executablePath: bandwidthLimitModalProcess.executablePath,
+      });
+      setBandwidthLimiterState({ engine: result?.engine || null, rules: result?.rules || [] });
+      setBandwidthLimitModalProcess(null);
+      setBandwidthLimitFeedback(texts.limiterRemoved);
+    } catch (error) {
+      setBandwidthLimitFeedback(String(error || 'bandwidth-limit-remove-failed'));
+    } finally {
+      setBandwidthLimitSaving(false);
+    }
+  }, [bandwidthLimitModalProcess, texts.limiterRemoved]);
+
 
 
 
@@ -2601,9 +3031,174 @@ const App = () => {
     return { label: texts.speedQualityUnstable, tone: 'bad' };
   }, [speedMetrics, texts]);
 
+  const networkUsageStats = useMemo(() => {
+    const current = networkSnapshot;
+    const previous = previousNetworkSnapshot;
+    if (!current) {
+      return {
+        downloadRate: 0,
+        uploadRate: 0,
+        totalReceived: 0,
+      totalSent: 0,
+      adapters: [],
+      processes: [],
+      maxAdapterRate: 0,
+      activeAdapters: 0,
+      activeProcesses: 0,
+      processGroups: [],
+    };
+  }
+
+    const elapsedSeconds = previous
+      ? Math.max(0.5, (Number(current.timestampMs) - Number(previous.timestampMs)) / 1000)
+      : 0;
+    const previousAdapters = new Map((previous?.adapters || []).map((adapter) => [adapter.name, adapter]));
+    const adapters = (current.adapters || []).map((adapter) => {
+      const previousAdapter = previousAdapters.get(adapter.name);
+      const receivedDelta = previousAdapter ? Math.max(0, Number(adapter.receivedBytes || 0) - Number(previousAdapter.receivedBytes || 0)) : 0;
+      const sentDelta = previousAdapter ? Math.max(0, Number(adapter.sentBytes || 0) - Number(previousAdapter.sentBytes || 0)) : 0;
+      return {
+        ...adapter,
+        downloadRate: elapsedSeconds ? receivedDelta / elapsedSeconds : 0,
+        uploadRate: elapsedSeconds ? sentDelta / elapsedSeconds : 0,
+      };
+    }).sort((left, right) => (right.downloadRate + right.uploadRate) - (left.downloadRate + left.uploadRate));
+
+    const receivedDelta = previous ? Math.max(0, Number(current.receivedBytes || 0) - Number(previous.receivedBytes || 0)) : 0;
+    const sentDelta = previous ? Math.max(0, Number(current.sentBytes || 0) - Number(previous.sentBytes || 0)) : 0;
+
+    const processMap = new Map();
+    for (const process of current.processes || []) {
+      const category = getNetworkProcessCategory(process);
+      const normalizedName = String(process.name || 'Unknown').trim() || 'Unknown';
+      const groupKey = shouldGroupNetworkProcess(process)
+        ? `${category}:${normalizedName.toLowerCase()}`
+        : `${category}:${normalizedName.toLowerCase()}:${process.pid}`;
+      const existing = processMap.get(groupKey) || {
+        id: groupKey,
+        name: normalizedName,
+        category,
+        connections: 0,
+        pids: [],
+        paths: [],
+        icons: [],
+        remoteAddresses: [],
+        grouped: false,
+      };
+      existing.connections += Number(process.connections || 0);
+      if (process.pid) existing.pids.push(process.pid);
+      if (process.path && !existing.paths.includes(process.path)) existing.paths.push(process.path);
+      if (process.iconDataUrl && !existing.icons.includes(process.iconDataUrl)) existing.icons.push(process.iconDataUrl);
+      for (const remote of process.remoteAddresses || []) {
+        if (remote && !existing.remoteAddresses.includes(remote)) existing.remoteAddresses.push(remote);
+      }
+      existing.grouped = existing.grouped || shouldGroupNetworkProcess(process);
+      processMap.set(groupKey, existing);
+    }
+
+    const query = networkProcessSearch.trim().toLowerCase();
+    const categoryLabels = {
+      browsers: texts.networkCategoryBrowsers,
+      apps: texts.networkCategoryApps,
+      unknown: texts.networkCategoryUnknown,
+      system: texts.networkCategorySystem,
+    };
+    const statusLabels = {
+      high: texts.networkStatusHigh,
+      normal: texts.networkStatusNormal,
+      idle: texts.networkStatusIdle,
+    };
+    const displayProcesses = [...processMap.values()]
+      .map((process) => {
+        const connections = Number(process.connections || 0);
+        const status = getNetworkProcessStatus(connections);
+        const pids = [...new Set(process.pids)].sort((left, right) => Number(left) - Number(right));
+        const remoteAddresses = [...new Set(process.remoteAddresses)].slice(0, 8);
+        const icons = [...new Set(process.icons || [])];
+        return {
+          ...process,
+          connections,
+          pids,
+          remoteAddresses,
+          icons,
+          iconDataUrl: icons[0] || '',
+          status,
+          statusLabel: statusLabels[status],
+          categoryLabel: categoryLabels[process.category],
+          searchText: [
+            process.name,
+            process.category,
+            categoryLabels[process.category],
+            status,
+            statusLabels[status],
+            ...pids.map(String),
+            ...remoteAddresses,
+            ...process.paths,
+          ].join(' ').toLowerCase(),
+        };
+      })
+      .filter((process) => !query || process.searchText.includes(query))
+      .sort((left, right) => Number(right.connections || 0) - Number(left.connections || 0))
+      .slice(0, 24);
+
+    const processGroups = [
+      {
+        category: 'main',
+        label: texts.networkCategoryMain,
+        processes: displayProcesses.filter((process) => process.category !== 'system'),
+      },
+      {
+        category: 'system',
+        label: texts.networkCategorySystem,
+        processes: displayProcesses.filter((process) => process.category === 'system'),
+      },
+    ]
+      .filter((group) => group.processes.length > 0);
+
+    return {
+      downloadRate: elapsedSeconds ? receivedDelta / elapsedSeconds : 0,
+      uploadRate: elapsedSeconds ? sentDelta / elapsedSeconds : 0,
+      totalReceived: Number(current.receivedBytes || 0),
+      totalSent: Number(current.sentBytes || 0),
+      adapters,
+      maxAdapterRate: adapters.reduce((max, adapter) => Math.max(max, Number(adapter.downloadRate || 0) + Number(adapter.uploadRate || 0)), 0),
+      activeAdapters: adapters.filter((adapter) => (Number(adapter.downloadRate || 0) + Number(adapter.uploadRate || 0)) > 0).length,
+      activeProcesses: (current.processes || []).filter((process) => Number(process.connections || 0) > 0).length,
+      processes: displayProcesses,
+      processGroups,
+    };
+  }, [networkSnapshot, previousNetworkSnapshot, networkProcessSearch, texts]);
+
+  const visibleNetworkProcessGroups = useMemo(() => {
+    if (showAllNetworkProcesses) {
+      return networkUsageStats.processGroups;
+    }
+
+    let remaining = NETWORK_PROCESS_PREVIEW_LIMIT;
+    return networkUsageStats.processGroups
+      .map((group) => {
+        const processes = group.processes.slice(0, Math.max(0, remaining));
+        remaining -= processes.length;
+        return { ...group, processes };
+      })
+      .filter((group) => group.processes.length > 0);
+  }, [networkUsageStats.processGroups, showAllNetworkProcesses]);
+
+  const visibleNetworkProcessCount = visibleNetworkProcessGroups.reduce(
+    (total, group) => total + group.processes.length,
+    0
+  );
+  const canToggleNetworkProcesses = networkUsageStats.processes.length > NETWORK_PROCESS_PREVIEW_LIMIT;
+  const hiddenNetworkProcessCount = Math.max(0, networkUsageStats.processes.length - visibleNetworkProcessCount);
+
+  useEffect(() => {
+    setShowAllNetworkProcesses(false);
+  }, [networkProcessSearch]);
+
   const pageTitle = useMemo(() => {
     if (currentPage === 'dns') return texts.dnsChecker;
     if (currentPage === 'speed') return texts.speedTest;
+    if (currentPage === 'network') return texts.networkUsage;
     if (currentPage === 'log') return texts.alerts;
     if (currentPage === 'about') return texts.about;
     if (currentPage === 'settings') return texts.settings;
@@ -2780,7 +3375,7 @@ const App = () => {
 
 
   return (
-    <div className={`app-shell ${isSortingHosts ? 'sorting-active' : ''} ${compactMode ? 'compact' : ''}`}>
+    <div className={`app-shell ${isSortingHosts ? 'sorting-active' : ''} ${compactMode ? 'compact' : ''} ${isWindowMaximized ? 'maximized' : ''}`}>
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           <button
@@ -2801,11 +3396,13 @@ const App = () => {
                     ? texts.dnsChecker
                     : currentPage === 'speed'
                       ? texts.speedTest
-                      : currentPage === 'log'
-                        ? texts.alerts
-                        : currentPage === 'about'
-                          ? texts.about
-                          : texts.settings}
+                      : currentPage === 'network'
+                        ? texts.networkUsage
+                        : currentPage === 'log'
+                          ? texts.alerts
+                          : currentPage === 'about'
+                            ? texts.about
+                            : texts.settings}
               </div>
             </div>
             <span className="sidebar-team-about-icon" aria-hidden="true">
@@ -2853,6 +3450,17 @@ const App = () => {
                   <img src={speedIcon} alt="" className="sidebar-item-icon-img" />
                 </span>
                 <span className="sidebar-item-text">{texts.speedTest}</span>
+              </button>
+              <button
+                className={`sidebar-item ${currentPage === 'network' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('network')}
+                data-tooltip={texts.networkUsage}
+                aria-label={texts.networkUsage}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={nusageIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.networkUsage}</span>
               </button>
               <button
                 className={`sidebar-item ${currentPage === 'log' ? 'active' : ''}`}
@@ -2926,7 +3534,7 @@ const App = () => {
               <GiftIcon />
             </button>
             {showDonateNudge && (
-              <div className="sidebar-donate-nudge" role="status" aria-live="polite">
+              <div className={`sidebar-donate-nudge ${isPersian ? 'rtl' : ''}`} role="status" aria-live="polite">
                 <button
                   type="button"
                   className="sidebar-donate-close"
@@ -2952,8 +3560,16 @@ const App = () => {
           <div className="titlebar-title">PulseNet</div>
         </div>
         <div className="titlebar-controls">
-          <div className="titlebar-button minimize" id="minimize-button">&#x2212;</div>
-          <div className="titlebar-button close" id="close-button">&#x2715;</div>
+          <button type="button" className="titlebar-button minimize" id="minimize-button" aria-label="Minimize">&#x2212;</button>
+          <button
+            type="button"
+            className="titlebar-button maximize"
+            id="maximize-button"
+            aria-label={isWindowMaximized ? 'Restore window' : 'Maximize'}
+          >
+            <span className={`titlebar-maximize-icon ${isWindowMaximized ? 'restore' : ''}`} aria-hidden="true"></span>
+          </button>
+          <button type="button" className="titlebar-button close" id="close-button" aria-label="Close">&#x2715;</button>
         </div>
       </div>
       <div
@@ -3571,6 +4187,281 @@ const App = () => {
               <div className="speed-note-body">{texts.speedNote}</div>
             </div>
           </div>
+        ) : currentPage === 'network' ? (
+          <div className="network-page">
+            <div className="network-header-panel">
+              <div className="network-identity">
+                <span className="network-page-icon" aria-hidden="true">
+                  <img src={nusageIcon} alt="" />
+                </span>
+                <div>
+                  <div className="network-kicker">{texts.networkUsage}</div>
+                  <div className="network-subtitle">{texts.networkMonitorSubtitle}</div>
+                </div>
+              </div>
+              <div className="network-header-actions">
+                <span className="network-live-pill">
+                  <i aria-hidden="true"></i>
+                  1s
+                </span>
+              </div>
+            </div>
+
+            {networkError && (
+              <div className="network-error">
+                {texts.networkUnavailable} {networkError}
+              </div>
+            )}
+
+            <div className="network-overview-grid">
+              <div className="network-throughput-card">
+                <div className="network-throughput-head">
+                  <div>
+                    <span>{texts.networkDownloadLive}</span>
+                    <strong>{formatByteRate(networkUsageStats.downloadRate)}</strong>
+                  </div>
+                  <div>
+                    <span>{texts.networkUploadLive}</span>
+                    <strong>{formatByteRate(networkUsageStats.uploadRate)}</strong>
+                  </div>
+                </div>
+                <div className="network-throughput-rail" aria-hidden="true">
+                  <span
+                    className="down"
+                    style={{ width: `${Math.min(100, Math.max(4, networkUsageStats.downloadRate ? (networkUsageStats.downloadRate / Math.max(networkUsageStats.downloadRate + networkUsageStats.uploadRate, 1)) * 100 : 0))}%` }}
+                  ></span>
+                  <span
+                    className="up"
+                    style={{ width: `${Math.min(100, Math.max(4, networkUsageStats.uploadRate ? (networkUsageStats.uploadRate / Math.max(networkUsageStats.downloadRate + networkUsageStats.uploadRate, 1)) * 100 : 0))}%` }}
+                  ></span>
+                </div>
+                <div className="network-live-summary">
+                  <span>{networkUsageStats.activeAdapters}/{networkUsageStats.adapters.length} {texts.networkAdapters}</span>
+                  <span>{networkUsageStats.activeProcesses} {texts.networkProcesses}</span>
+                </div>
+              </div>
+
+              <div className="network-total-stack">
+                <div className="network-metric-card">
+                  <span>{texts.networkTotalReceived}</span>
+                  <strong>{formatBytes(networkUsageStats.totalReceived)}</strong>
+                </div>
+                <div className="network-metric-card">
+                  <span>{texts.networkTotalSent}</span>
+                  <strong>{formatBytes(networkUsageStats.totalSent)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="network-content-grid">
+              <div className="network-panel">
+                <div className="network-panel-head">
+                  <div className="network-panel-title">{texts.networkAdapters}</div>
+                  <span>{networkUsageStats.adapters.length}</span>
+                </div>
+                {networkUsageStats.adapters.length === 0 ? (
+                  <div className="network-empty">{texts.networkNoAdapters}</div>
+                ) : (
+                  <div className="network-adapter-list">
+                    {networkUsageStats.adapters.map((adapter) => {
+                      const adapterRate = Number(adapter.downloadRate || 0) + Number(adapter.uploadRate || 0);
+                      const adapterShare = networkUsageStats.maxAdapterRate
+                        ? Math.min(100, Math.max(3, (adapterRate / networkUsageStats.maxAdapterRate) * 100))
+                        : 0;
+                      return (
+                        <div className="network-adapter-row" key={adapter.name}>
+                          <div className="network-adapter-top">
+                            <div className="network-adapter-main">
+                              <strong>{adapter.name}</strong>
+                              <span>{formatBytes(adapter.receivedBytes)} / {formatBytes(adapter.sentBytes)}</span>
+                            </div>
+                            <div className="network-adapter-rates">
+                              <span className="down">{formatByteRate(adapter.downloadRate)}</span>
+                              <span className="up">{formatByteRate(adapter.uploadRate)}</span>
+                            </div>
+                          </div>
+                          <div className="network-adapter-meter" aria-hidden="true">
+                            <span style={{ width: `${adapterShare}%` }}></span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="network-panel network-process-panel">
+                <div className="network-panel-head">
+                  <div className="network-panel-title">{texts.networkProcesses}</div>
+                  <span>{networkUsageStats.processes.length}</span>
+                </div>
+                <div className={`limiter-engine-status ${bandwidthLimiterState.engine?.ready ? 'ready' : 'pending'}`}>
+                  <span className="limiter-engine-dot" aria-hidden="true"></span>
+                  <strong>
+                    {bandwidthLimiterState.engine?.ready
+                      ? texts.limiterEngineReady
+                      : bandwidthLimiterState.engine?.running
+                        ? texts.limiterServicePreparing
+                        : bandwidthLimiterState.engine?.installed
+                          ? texts.limiterServiceStopped
+                          : texts.limiterSetupRequired}
+                  </strong>
+                  <em>{bandwidthLimiterState.rules?.length || 0}</em>
+                </div>
+                {!bandwidthLimiterState.engine?.ready && (
+                  <div className="limiter-engine-hint">{texts.limiterStagedHint}</div>
+                )}
+                {bandwidthLimitFeedback && !bandwidthLimitModalProcess && (
+                  <div className="limiter-inline-feedback">{bandwidthLimitFeedback}</div>
+                )}
+                <div className="network-process-tools">
+                  <input
+                    type="search"
+                    value={networkProcessSearch}
+                    onChange={(event) => setNetworkProcessSearch(event.target.value)}
+                    placeholder={texts.networkSearchProcesses}
+                    className="network-process-search"
+                  />
+                </div>
+                {networkUsageStats.activeProcesses === 0 ? (
+                  <div className="network-empty">
+                    {texts.networkNoProcesses}
+                    <span>{texts.networkLinuxProcessNote}</span>
+                  </div>
+                ) : networkUsageStats.processes.length === 0 ? (
+                  <div className="network-empty">{texts.networkNoProcessMatches}</div>
+                ) : (
+                  <div className="network-process-list">
+                    {visibleNetworkProcessGroups.map((group) => (
+                      <div className="network-process-group" key={group.category}>
+                        <div className="network-process-group-title">
+                          <span>{group.label}</span>
+                          <em>{networkUsageStats.processGroups.find((item) => item.category === group.category)?.processes.length || group.processes.length}</em>
+                        </div>
+                        {group.processes.map((process) => {
+                          const isExpanded = Boolean(expandedNetworkProcesses[process.id]);
+                          const processExecutablePath = (process.paths || [])[0] || '';
+                          const limitRule = bandwidthRulesByPath.get(normalizeLimiterPath(processExecutablePath));
+                          const remotes = (process.remoteAddresses || []).slice(0, 3).join(', ');
+                          const pidLabel = process.grouped && process.pids.length > 1
+                            ? `${texts.networkGroupedPids}: ${process.pids.slice(0, 4).join(', ')}${process.pids.length > 4 ? '...' : ''}`
+                            : `${texts.networkPid}: ${process.pids[0] || '--'}`;
+                          return (
+                            <div className={`network-process-card ${process.status}`} key={process.id}>
+                              <div className="network-process-card-main">
+                                <div className="network-process-name">
+                                  <strong>{process.name}</strong>
+                                  <span>{pidLabel}</span>
+                                </div>
+                                <div className="network-process-badges">
+                                  {limitRule && (
+                                    <span className="network-process-limit-badge">
+                                      {networkControlIsWindows
+                                        ? bandwidthLimiterState.engine?.ready
+                                          ? texts.limiterBlocked
+                                          : texts.limiterStaged
+                                        : bandwidthLimiterState.engine?.ready
+                                          ? texts.limiterActive
+                                          : texts.limiterStaged}
+                                    </span>
+                                  )}
+                                  <span className={`network-process-status ${process.status}`}>{process.statusLabel}</span>
+                                  <span className="network-process-count">{process.connections}</span>
+                                </div>
+                              </div>
+                              <div className="network-process-preview">
+                                <span>{texts.networkRemote}: {remotes || '--'}</span>
+                                <button
+                                  type="button"
+                                  className="network-process-toggle"
+                                  onClick={() => setExpandedNetworkProcesses((current) => ({
+                                    ...current,
+                                    [process.id]: !current[process.id],
+                                  }))}
+                                >
+                                  {isExpanded ? texts.networkHideDetails : texts.networkDetails}
+                                </button>
+                              </div>
+                              {isExpanded && (
+                                <div className="network-process-details">
+                                  <div className="network-process-expanded-head">
+                                    <span className="network-process-app-icon">
+                                      {process.iconDataUrl ? (
+                                        <img src={process.iconDataUrl} alt="" />
+                                      ) : (
+                                        <strong>{Array.from(process.name || '?').slice(0, 2).join('').toUpperCase()}</strong>
+                                      )}
+                                    </span>
+                                    <div className="network-process-expanded-title">
+                                      <strong>{process.name}</strong>
+                                      <span>{process.categoryLabel} / {process.statusLabel}</span>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <span>{texts.networkConnections}</span>
+                                    <strong>{process.connections}</strong>
+                                  </div>
+                                  <div>
+                                    <span>{texts.networkRemote}</span>
+                                    <strong>{(process.remoteAddresses || []).join(', ') || '--'}</strong>
+                                  </div>
+                                  {process.paths.length > 0 && (
+                                    <div>
+                                      <span>{texts.networkPath}</span>
+                                      <strong>{process.paths.join(' | ')}</strong>
+                                    </div>
+                                  )}
+                                  <div className="network-process-limit-row">
+                                    <span>{networkControlIsWindows ? texts.limiterBlockInternet : texts.limiterTitle}</span>
+                                    <div className="network-process-limit-summary">
+                                      {limitRule && !networkControlIsWindows && (
+                                        <span>
+                                          {limitRule.blocked
+                                            ? texts.limiterBlocked
+                                            : `↓ ${formatBandwidthLimit(limitRule.downloadLimitBps)} / ↑ ${formatBandwidthLimit(limitRule.uploadLimitBps)}`}
+                                        </span>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="network-process-limit-button"
+                                        disabled={!processExecutablePath || bandwidthLimitSaving}
+                                        onClick={() => networkControlIsWindows
+                                          ? handleToggleApplicationBlock(process)
+                                          : openBandwidthLimitModal(process)}
+                                      >
+                                        {networkControlIsWindows
+                                          ? limitRule?.blocked
+                                            ? texts.limiterUnblockInternet
+                                            : texts.limiterBlockInternet
+                                          : limitRule
+                                            ? texts.limiterEditLimit
+                                            : texts.limiterSetLimit}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                    {canToggleNetworkProcesses && (
+                      <button
+                        type="button"
+                        className="network-process-show-more"
+                        onClick={() => setShowAllNetworkProcesses((current) => !current)}
+                      >
+                        {showAllNetworkProcesses
+                          ? texts.networkShowLessProcesses
+                          : `${texts.networkShowMoreProcesses} (${hiddenNetworkProcessCount})`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         ) : currentPage === 'log' ? (
           <div className="log-page">
             <div className="log-console">
@@ -3888,6 +4779,109 @@ const App = () => {
           </div>
         </div>
       </div>
+      {bandwidthLimitModalProcess && !networkControlIsWindows && (
+        <div className="bandwidth-limit-modal" role="dialog" aria-modal="true" aria-labelledby="bandwidth-limit-title">
+          <button
+            type="button"
+            className="bandwidth-limit-backdrop"
+            aria-label={texts.limiterCancel}
+            onClick={closeBandwidthLimitModal}
+          ></button>
+          <div className="bandwidth-limit-card">
+            <div className="bandwidth-limit-heading">
+              <div>
+                <span>{texts.limiterTitle}</span>
+                <strong id="bandwidth-limit-title">{bandwidthLimitModalProcess.name}</strong>
+              </div>
+              <button type="button" onClick={closeBandwidthLimitModal} aria-label={texts.limiterCancel}>×</button>
+            </div>
+            <div className="bandwidth-limit-path">{bandwidthLimitModalProcess.executablePath}</div>
+            <label className="bandwidth-limit-block-toggle">
+              <span>
+                <strong>{texts.limiterBlockInternet}</strong>
+                <em>{texts.limiterBlocked}</em>
+              </span>
+              <input
+                type="checkbox"
+                checked={bandwidthLimitForm.blocked}
+                onChange={(event) => setBandwidthLimitForm((current) => ({
+                  ...current,
+                  blocked: event.target.checked,
+                }))}
+              />
+            </label>
+            <div className="bandwidth-limit-fields">
+              <label>
+                <span>{texts.limiterDownload} <em>{texts.limiterOptional}</em></span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={bandwidthLimitForm.download}
+                  disabled={bandwidthLimitForm.blocked}
+                  onChange={(event) => setBandwidthLimitForm((current) => ({ ...current, download: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>{texts.limiterUpload} <em>{texts.limiterOptional}</em></span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={bandwidthLimitForm.upload}
+                  disabled={bandwidthLimitForm.blocked}
+                  onChange={(event) => setBandwidthLimitForm((current) => ({ ...current, upload: event.target.value }))}
+                />
+              </label>
+            </div>
+            <label className="bandwidth-limit-unit">
+              <span>{texts.limiterUnit}</span>
+              <select
+                value={bandwidthLimitForm.unit}
+                disabled={bandwidthLimitForm.blocked}
+                onChange={(event) => handleBandwidthLimitUnitChange(event.target.value)}
+              >
+                <option value="kbps">{texts.limiterKbps}</option>
+                <option value="mbps">{texts.limiterMbps}</option>
+                <option value="kbytes">{texts.limiterKBps}</option>
+                <option value="mbytes">{texts.limiterMBps}</option>
+              </select>
+            </label>
+            {!bandwidthLimiterState.engine?.ready && (
+              <div className="bandwidth-limit-notice">{texts.limiterStagedHint}</div>
+            )}
+            {bandwidthLimitFeedback && (
+              <div className="bandwidth-limit-error">{bandwidthLimitFeedback}</div>
+            )}
+            <div className="bandwidth-limit-actions">
+              {bandwidthLimitModalProcess.existingRule && (
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={bandwidthLimitSaving}
+                  onClick={handleRemoveBandwidthLimit}
+                >
+                  {texts.limiterRemove}
+                </button>
+              )}
+              <span></span>
+              <button type="button" disabled={bandwidthLimitSaving} onClick={closeBandwidthLimitModal}>
+                {texts.limiterCancel}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={bandwidthLimitSaving}
+                onClick={handleSaveBandwidthLimit}
+              >
+                {texts.limiterApply}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {closeModalOpen && (
         <div className="close-modal">
           <div className="close-modal-backdrop" onClick={() => setCloseModalOpen(false)}></div>

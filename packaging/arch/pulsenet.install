@@ -1,0 +1,19 @@
+post_install() {
+  if command -v setcap >/dev/null 2>&1 && [ -x /usr/lib/pulsenet/pulsenet ]; then
+    setcap cap_net_raw+ep /usr/lib/pulsenet/pulsenet 2>/dev/null || true
+  fi
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl enable --now pulsenet-network-control.service 2>/dev/null || true
+}
+
+post_upgrade() {
+  post_install
+}
+
+pre_remove() {
+  systemctl disable --now pulsenet-network-control.service 2>/dev/null || true
+}
+
+post_remove() {
+  systemctl daemon-reload 2>/dev/null || true
+}

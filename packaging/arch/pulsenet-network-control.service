@@ -1,0 +1,17 @@
+[Unit]
+Description=PulseNet per-application network control
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/pulsenet --linux-network-helper-daemon
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_DAC_OVERRIDE
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

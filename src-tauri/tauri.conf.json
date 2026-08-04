@@ -13,11 +13,13 @@
     "windows": [
       {
         "title": "PulseNet",
-        "width": 1000,
-        "height": 600,
+        "width": 1100,
+        "height": 680,
+        "minWidth": 900,
+        "minHeight": 560,
         "decorations": false,
         "transparent": true,
-        "resizable": false,
+        "resizable": true,
         "fullscreen": false,
         "maximized": false
       }
@@ -36,7 +38,8 @@
     "targets": "all",
     "windows": {
       "nsis": {
-        "template": "nsis-template.nsi"
+        "template": "nsis-template.nsi",
+        "installMode": "perMachine"
       },
       "wix": {
         "fragmentPaths": [
@@ -47,10 +50,34 @@
         ]
       }
     },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libayatana-appindicator3-1",
+          "libcap2-bin",
+          "libwebkit2gtk-4.1-0",
+          "network-manager",
+          "nftables"
+        ],
+        "postInstallScript": "scripts/linux-postinstall.sh",
+        "preRemoveScript": "scripts/linux-preremove.sh"
+      },
+      "rpm": {
+        "depends": [
+          "libcap",
+          "NetworkManager",
+          "nftables",
+          "webkit2gtk4.1"
+        ],
+        "postInstallScript": "scripts/linux-postinstall.sh",
+        "preRemoveScript": "scripts/linux-preremove.sh"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/256x256.png",
       "icons/icon.ico"
     ]
   }

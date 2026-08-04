@@ -116,7 +116,31 @@
       Impersonate="yes"
     />
 
+    <CustomAction
+      Id="InstallPulseNetNetworkControl"
+      Directory="INSTALLDIR"
+      ExeCommand='"[INSTALLDIR]PulseNetNetworkControl.exe" install'
+      Execute="deferred"
+      Return="check"
+      Impersonate="no"
+    />
+
+    <CustomAction
+      Id="UninstallPulseNetNetworkControl"
+      Directory="INSTALLDIR"
+      ExeCommand='"[INSTALLDIR]PulseNetNetworkControl.exe" uninstall'
+      Execute="deferred"
+      Return="ignore"
+      Impersonate="no"
+    />
+
     <InstallExecuteSequence>
+      <Custom Action="InstallPulseNetNetworkControl" After="InstallFiles">
+        NOT REMOVE
+      </Custom>
+      <Custom Action="UninstallPulseNetNetworkControl" Before="RemoveFiles">
+        REMOVE="ALL"
+      </Custom>
       <Custom Action="UninstallOldNsisByDisplayName" Before="UninstallOldNsisHKLM64">
         NOT Installed AND NOT REMOVE
       </Custom>

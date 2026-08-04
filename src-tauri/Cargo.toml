@@ -11,6 +11,7 @@ tauri-build = { version = "2.6.2", features = [] }
 [dependencies]
 tauri = { version = "2.11.2", features = ["tray-icon", "image-ico", "image-png"] }
 tauri-plugin-opener = "2.5.4"
+tauri-plugin-window-state = "2.4.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 auto-launch = "0.5"
@@ -18,6 +19,28 @@ reqwest = { version = "0.11", default-features = false, features = ["json", "rus
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 trust-dns-resolver = "0.23"
 surge-ping = "0.8"
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
+  "Win32_Networking_WinSock",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Pipes",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Services",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging"
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+dbus = "0.9"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

@@ -14,6 +14,12 @@ src-tauri/gen/
 **/target/
 *.exe
 *.msi
+*.sys
+*.cat
+native/windows-firewall/out/
+experimental/windows-wfp/out/
+experimental/windows-wfp/driver/out/
+experimental/windows-wfp/packages/
 
 # IDE and editor files
 .idea/

@@ -1,7 +1,7 @@
 # Maintainer: SM0KE
 
 pkgname=pulsenet
-pkgver=1.6.1
+pkgver=1.6.2
 pkgrel=1
 pkgdesc="Lightweight desktop network utility built with Tauri and React"
 arch=("x86_64")
@@ -9,9 +9,11 @@ url="https://github.com/SM8KE1/PulseNet"
 license=("ISC")
 depends=(
   "gtk3"
+  "libcap"
   "libayatana-appindicator"
   "librsvg"
   "networkmanager"
+  "nftables"
   "openssl"
   "polkit"
   "webkit2gtk-4.1"
@@ -24,14 +26,17 @@ makedepends=(
   "rust"
 )
 options=("!lto")
+install=pulsenet.install
 
 _repo_root="$(cd "$PWD/../.." && pwd -P)"
 source=(
   "${pkgname}::git+file://${_repo_root}"
   "pulsenet.sh"
   "pulsenet.desktop"
+  "pulsenet-network-control.service"
 )
 sha256sums=(
+  "SKIP"
   "SKIP"
   "SKIP"
   "SKIP"
@@ -55,7 +60,9 @@ package() {
   install -Dm755 "src-tauri/target/release/pulsenet" "$pkgdir/usr/lib/pulsenet/pulsenet"
   install -Dm755 "$srcdir/pulsenet.sh" "$pkgdir/usr/bin/pulsenet"
   install -Dm644 "$srcdir/pulsenet.desktop" "$pkgdir/usr/share/applications/pulsenet.desktop"
+  install -Dm644 "$srcdir/pulsenet-network-control.service" "$pkgdir/usr/lib/systemd/system/pulsenet-network-control.service"
   install -Dm644 "src-tauri/icons/32x32.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/pulsenet.png"
   install -Dm644 "src-tauri/icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/pulsenet.png"
+  install -Dm644 "src-tauri/icons/256x256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/pulsenet.png"
   install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/pulsenet/LICENSE"
 }

@@ -33,6 +33,7 @@ jobs:
             librsvg2-dev \
             libssl-dev \
             libwebkit2gtk-4.1-dev \
+            nftables \
             wget
 
       - name: Setup Node.js
