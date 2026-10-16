@@ -7,9 +7,11 @@ export default defineConfig({
   build: {
     sourcemap: false,
   },
-
-
-
+  server: {
+    watch: {
+      ignored: ['**/src-tauri/target/**'],
+    },
+  },
   plugins: [
     react(),
   ],

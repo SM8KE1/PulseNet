@@ -1,5 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod updates;
+
+use updates::check_for_updates;
+
 #[cfg(not(target_os = "windows"))]
 use auto_launch::AutoLaunchBuilder;
 #[cfg(target_os = "windows")]
@@ -12,6 +16,9 @@ use dbus::blocking::stdintf::org_freedesktop_dbus::Properties;
 use dbus::blocking::Connection as DbusConnection;
 #[cfg(target_os = "linux")]
 use dbus::Path as DbusPath;
+use hickory_resolver::config::{ConnectionConfig, NameServerConfig, ResolverConfig, ResolverOpts};
+use hickory_resolver::net::runtime::TokioRuntimeProvider;
+use hickory_resolver::Resolver;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -51,8 +58,6 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, State, Window, WindowEvent};
 use tokio::net::lookup_host;
 use tokio::time::timeout;
-use trust_dns_resolver::config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts};
-use trust_dns_resolver::TokioAsyncResolver;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_BUFFER_OVERFLOW, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS,
@@ -92,11 +97,6 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::UI::Shell::ExtractIconExW;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
-
-const GITHUB_REPO: &str = "SM8KE1/PulseNet";
-const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/SM8KE1/PulseNet/releases/latest";
-const GITHUB_RELEASES_LIST_URL: &str =
-    "https://api.github.com/repos/SM8KE1/PulseNet/releases?per_page=20";
 
 const CLOUDFLARE_BASE: &str = "https://speed.cloudflare.com";
 const HETZNER_DOWNLOAD_URL: &str = "https://speed.hetzner.de/10MB.bin";
@@ -287,6 +287,37 @@ struct PersistedNetworkApplicationUsageState {
     applications: Vec<PersistedNetworkApplicationUsage>,
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Default)]
+struct LinuxApplicationUsageTracker {
+    applications: HashMap<String, LinuxTrackedApplication>,
+    sockets: HashMap<String, LinuxTrackedSocket>,
+    baseline_applications: HashSet<String>,
+    initialized: bool,
+}
+
+#[cfg(target_os = "linux")]
+struct LinuxTrackedApplication {
+    name: String,
+    path: Option<String>,
+    download_bytes: u64,
+}
+
+#[cfg(target_os = "linux")]
+struct LinuxTrackedSocket {
+    application_key: String,
+    last_download_bytes: u64,
+    last_seen_ms: u128,
+}
+
+#[cfg(target_os = "linux")]
+struct LinuxTcpUsageSample {
+    inode: String,
+    name: String,
+    path: Option<String>,
+    download_bytes: u64,
+}
+
 #[derive(Serialize, Clone)]
 struct NetworkUsageSnapshot {
     #[serde(rename = "timestampMs")]
@@ -343,20 +374,6 @@ struct BandwidthLimiterEngineStatus {
 struct BandwidthLimiterState {
     engine: BandwidthLimiterEngineStatus,
     rules: Vec<BandwidthLimitRule>,
-}
-
-#[derive(Serialize)]
-struct UpdateCheckResult {
-    #[serde(rename = "currentVersion")]
-    current_version: String,
-    #[serde(rename = "latestVersion")]
-    latest_version: String,
-    #[serde(rename = "updateAvailable")]
-    update_available: bool,
-    #[serde(rename = "isPrerelease")]
-    is_prerelease: bool,
-    url: String,
-    error: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -528,6 +545,355 @@ fn linux_rule_key(rule: &BandwidthLimitRule) -> String {
 }
 
 #[cfg(target_os = "linux")]
+fn linux_nft_cgroup_match(uid: u32, key: &str) -> String {
+    format!(
+        "socket cgroupv2 level 1 \"pulsenet\" socket cgroupv2 level 2 \"pulsenet/{uid}\" socket cgroupv2 level 3 \"pulsenet/{uid}/{key}\""
+    )
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum LinuxNftTransport {
+    Tcp,
+    Udp,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct LinuxNftSocketEndpoint {
+    transport: LinuxNftTransport,
+    address: std::net::IpAddr,
+    port: u16,
+}
+
+#[cfg(target_os = "linux")]
+fn linux_parse_proc_net_endpoint(value: &str, ipv4: bool) -> Option<(std::net::IpAddr, u16)> {
+    let (host, port) = value.split_once(':')?;
+    let port = u16::from_str_radix(port, 16).ok()?;
+    if ipv4 {
+        if host.len() != 8 {
+            return None;
+        }
+        let raw = u32::from_str_radix(host, 16).ok()?;
+        Some((
+            std::net::IpAddr::V4(Ipv4Addr::from(raw.to_le_bytes())),
+            port,
+        ))
+    } else {
+        if host.len() != 32 {
+            return None;
+        }
+        let mut bytes = [0u8; 16];
+        for (index, word) in host.as_bytes().chunks_exact(8).enumerate() {
+            let word = std::str::from_utf8(word).ok()?;
+            let raw = u32::from_str_radix(word, 16).ok()?;
+            bytes[index * 4..index * 4 + 4].copy_from_slice(&raw.to_le_bytes());
+        }
+        Some((std::net::IpAddr::V6(std::net::Ipv6Addr::from(bytes)), port))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_read_proc_net_endpoints(
+    path: &str,
+    ipv4: bool,
+    transport: LinuxNftTransport,
+) -> HashMap<String, LinuxNftSocketEndpoint> {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    raw.lines()
+        .skip(1)
+        .filter_map(|line| {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            if fields.len() <= 9 {
+                return None;
+            }
+            let inode = fields[9].trim();
+            if inode.is_empty() || inode == "0" {
+                return None;
+            }
+            let (address, port) = linux_parse_proc_net_endpoint(fields[1], ipv4)?;
+            Some((
+                inode.to_string(),
+                LinuxNftSocketEndpoint {
+                    transport,
+                    address,
+                    port,
+                },
+            ))
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn linux_collect_blocked_socket_endpoints(
+    uid: u32,
+    rules: &[BandwidthLimitRule],
+) -> HashMap<String, HashSet<LinuxNftSocketEndpoint>> {
+    let paths = rules
+        .iter()
+        // Existing sockets keep the cgroup they had when they were created,
+        // even after their process is moved. Keep their endpoints for every
+        // active rule so enforcement can also cover already-open connections.
+        .filter(|rule| {
+            rule.enabled
+                && (rule.blocked
+                    || rule.download_limit_bps.is_some_and(|limit| limit > 0)
+                    || rule.upload_limit_bps.is_some_and(|limit| limit > 0))
+        })
+        .map(|rule| (rule.executable_path.as_str(), linux_rule_key(rule)))
+        .collect::<HashMap<_, _>>();
+    let mut inode_keys = HashMap::<String, String>::new();
+    if let Ok(processes) = fs::read_dir("/proc") {
+        for process in processes.flatten() {
+            let Some(pid) = process
+                .file_name()
+                .to_str()
+                .and_then(|value| value.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            if process.metadata().map(|metadata| metadata.uid()).ok() != Some(uid) {
+                continue;
+            }
+            let Ok(executable) = fs::read_link(process.path().join("exe")) else {
+                continue;
+            };
+            let executable = executable.to_string_lossy();
+            let Some(key) = paths.get(executable.as_ref()) else {
+                continue;
+            };
+            for inode in linux_process_socket_inodes(pid) {
+                inode_keys.insert(inode, key.clone());
+            }
+        }
+    }
+
+    let mut socket_map = HashMap::new();
+    for (path, ipv4, transport) in [
+        ("/proc/net/tcp", true, LinuxNftTransport::Tcp),
+        ("/proc/net/tcp6", false, LinuxNftTransport::Tcp),
+        ("/proc/net/udp", true, LinuxNftTransport::Udp),
+        ("/proc/net/udp6", false, LinuxNftTransport::Udp),
+    ] {
+        socket_map.extend(linux_read_proc_net_endpoints(path, ipv4, transport));
+    }
+
+    let mut endpoints = HashMap::<String, HashSet<LinuxNftSocketEndpoint>>::new();
+    for (inode, endpoint) in socket_map {
+        if let Some(key) = inode_keys.get(&inode) {
+            endpoints.entry(key.clone()).or_default().insert(endpoint);
+        }
+    }
+    endpoints
+}
+
+#[cfg(target_os = "linux")]
+fn linux_blocked_endpoint_sets(
+    key: &str,
+    endpoints: &HashSet<LinuxNftSocketEndpoint>,
+) -> Vec<(String, String, String, String, Vec<String>, Vec<String>)> {
+    let mut sets = Vec::new();
+    for (transport, short, proto) in [
+        (LinuxNftTransport::Tcp, "t", "tcp"),
+        (LinuxNftTransport::Udp, "u", "udp"),
+    ] {
+        for (ipv4, family, addr_proto) in [(true, "4", "ip"), (false, "6", "ip6")] {
+            let mut exact = Vec::new();
+            let mut any_address = Vec::new();
+            for endpoint in endpoints.iter().filter(|endpoint| {
+                endpoint.transport == transport && endpoint.address.is_ipv4() == ipv4
+            }) {
+                if endpoint.address.is_unspecified() {
+                    any_address.push(endpoint.port.to_string());
+                } else {
+                    exact.push(format!("{} . {}", endpoint.address, endpoint.port));
+                }
+            }
+            exact.sort();
+            exact.dedup();
+            any_address.sort();
+            any_address.dedup();
+
+            let endpoint_set = format!("{short}{family}e_{key}");
+            let port_set = format!("{short}{family}p_{key}");
+            sets.push((
+                endpoint_set,
+                port_set,
+                proto.to_string(),
+                addr_proto.to_string(),
+                exact,
+                any_address,
+            ));
+        }
+    }
+    sets
+}
+
+#[cfg(target_os = "linux")]
+fn linux_nft_create_blocked_socket_sets(
+    table: &str,
+    key: &str,
+    endpoints: &HashSet<LinuxNftSocketEndpoint>,
+    blocked: bool,
+) -> String {
+    let mut script = String::new();
+    for (endpoint_set, port_set, protocol, address_protocol, exact, any_address) in
+        linux_blocked_endpoint_sets(key, endpoints)
+    {
+        let address_type = if address_protocol == "ip" {
+            "ipv4_addr"
+        } else {
+            "ipv6_addr"
+        };
+        script.push_str(&format!(
+            "add set inet {table} {endpoint_set} {{ type {address_type} . inet_service; }}\n\
+             add set inet {table} {port_set} {{ type inet_service; }}\n"
+        ));
+        if !exact.is_empty() {
+            script.push_str(&format!(
+                "add element inet {table} {endpoint_set} {{ {} }}\n",
+                exact.join(", ")
+            ));
+        }
+        if !any_address.is_empty() {
+            script.push_str(&format!(
+                "add element inet {table} {port_set} {{ {} }}\n",
+                any_address.join(", ")
+            ));
+        }
+        if blocked {
+            let (source, destination, source_port, destination_port) = if address_protocol == "ip" {
+                ("ip saddr", "ip daddr", "sport", "dport")
+            } else {
+                ("ip6 saddr", "ip6 daddr", "sport", "dport")
+            };
+            script.push_str(&format!(
+                "add rule inet {table} output {source} . {protocol} {source_port} @{endpoint_set} counter drop\n\
+                 add rule inet {table} output {protocol} {source_port} @{port_set} counter drop\n\
+                 add rule inet {table} input {destination} . {protocol} {destination_port} @{endpoint_set} counter drop\n\
+                 add rule inet {table} input {protocol} {destination_port} @{port_set} counter drop\n"
+            ));
+        }
+    }
+    script
+}
+
+#[cfg(target_os = "linux")]
+fn linux_nft_existing_socket_limit_rules(
+    table: &str,
+    uid: u32,
+    key: &str,
+    endpoints: &HashSet<LinuxNftSocketEndpoint>,
+    upload_limit_bps: Option<u64>,
+    download_limit_bps: Option<u64>,
+) -> String {
+    let mut script = String::new();
+    let cgroup_path = format!("pulsenet/{uid}/{key}");
+    for (transport, short, protocol) in [
+        (LinuxNftTransport::Tcp, "t", "tcp"),
+        (LinuxNftTransport::Udp, "u", "udp"),
+    ] {
+        for (ipv4, family, address_protocol) in [(true, "4", "ip"), (false, "6", "ip6")] {
+            let (source, destination, source_port, destination_port) = if address_protocol == "ip" {
+                ("ip saddr", "ip daddr", "sport", "dport")
+            } else {
+                ("ip6 saddr", "ip6 daddr", "sport", "dport")
+            };
+            let endpoint_set = format!("{short}{family}e_{key}");
+            let port_set = format!("{short}{family}p_{key}");
+            let has_endpoints = endpoints.iter().any(|endpoint| {
+                endpoint.transport == transport && endpoint.address.is_ipv4() == ipv4
+            });
+            if !has_endpoints {
+                continue;
+            }
+            for (direction, chain, address, port, limit) in [
+                ("up", "output", source, source_port, upload_limit_bps),
+                (
+                    "down",
+                    "input",
+                    destination,
+                    destination_port,
+                    download_limit_bps,
+                ),
+            ] {
+                if !limit.is_some_and(|limit| limit > 0) {
+                    continue;
+                }
+                let limit_name = format!("{direction}_{key}");
+                // Sockets created before cgroup placement retain their original
+                // socket cgroup. Match only those here; newly created sockets are
+                // shaped by the cgroup rule with the same shared token bucket.
+                script.push_str(&format!(
+                    "add rule inet {table} {chain} socket cgroupv2 level 3 != \"{cgroup_path}\" {address} . {protocol} {port} @{endpoint_set} limit name \"{limit_name}\" counter drop\n\
+                     add rule inet {table} {chain} socket cgroupv2 level 3 != \"{cgroup_path}\" {protocol} {port} @{port_set} limit name \"{limit_name}\" counter drop\n"
+                ));
+            }
+        }
+    }
+    script
+}
+
+#[cfg(target_os = "linux")]
+fn linux_nft_refresh_blocked_socket_sets(
+    table: &str,
+    rules: &[BandwidthLimitRule],
+    endpoints: &HashMap<String, HashSet<LinuxNftSocketEndpoint>>,
+) -> String {
+    let mut script = String::new();
+    for rule in rules.iter().filter(|rule| {
+        rule.enabled
+            && (rule.blocked
+                || rule.download_limit_bps.is_some_and(|limit| limit > 0)
+                || rule.upload_limit_bps.is_some_and(|limit| limit > 0))
+    }) {
+        let key = linux_rule_key(rule);
+        let empty = HashSet::new();
+        for (endpoint_set, port_set, _, _, exact, any_address) in
+            linux_blocked_endpoint_sets(&key, endpoints.get(&key).unwrap_or(&empty))
+        {
+            script.push_str(&format!(
+                "flush set inet {table} {endpoint_set}\nflush set inet {table} {port_set}\n"
+            ));
+            if !exact.is_empty() {
+                script.push_str(&format!(
+                    "add element inet {table} {endpoint_set} {{ {} }}\n",
+                    exact.join(", ")
+                ));
+            }
+            if !any_address.is_empty() {
+                script.push_str(&format!(
+                    "add element inet {table} {port_set} {{ {} }}\n",
+                    any_address.join(", ")
+                ));
+            }
+        }
+    }
+    script
+}
+
+#[cfg(target_os = "linux")]
+fn linux_blocked_endpoint_fingerprint(
+    endpoints: &HashMap<String, HashSet<LinuxNftSocketEndpoint>>,
+) -> u64 {
+    let mut rows = endpoints
+        .iter()
+        .flat_map(|(key, sockets)| {
+            sockets.iter().map(move |socket| {
+                format!(
+                    "{key}|{:?}|{}|{}",
+                    socket.transport, socket.address, socket.port
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    rows.sort();
+    linux_hash64(rows.join("\n").as_bytes())
+}
+
+#[cfg(target_os = "linux")]
 fn linux_nft_command() -> Option<PathBuf> {
     ["/usr/sbin/nft", "/sbin/nft", "/usr/bin/nft"]
         .into_iter()
@@ -537,66 +903,32 @@ fn linux_nft_command() -> Option<PathBuf> {
 
 #[cfg(target_os = "linux")]
 fn linux_run_nft(nft: &PathBuf, arguments: &[&str]) -> Result<(), String> {
-    let status = Command::new(nft)
+    let output = Command::new(nft)
         .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+        .output()
         .map_err(|error| format!("nft-exec-failed:{error}"))?;
-    status
-        .success()
-        .then_some(())
-        .ok_or_else(|| format!("nft-failed:{}", status.code().unwrap_or(-1)))
+    output.status.success().then_some(()).ok_or_else(|| {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            format!("nft-failed:{}", output.status.code().unwrap_or(-1))
+        } else {
+            format!("nft-failed:{}:{stderr}", output.status.code().unwrap_or(-1))
+        }
+    })
 }
 
 #[cfg(target_os = "linux")]
-fn linux_apply_nft_rules(
-    nft: &PathBuf,
-    uid: u32,
-    rules: &[BandwidthLimitRule],
-) -> Result<(), String> {
-    let table = format!("pulsenet_{uid}");
-    if linux_run_nft(nft, &["list", "table", "inet", &table]).is_err() {
-        linux_run_nft(nft, &["add", "table", "inet", &table])?;
+fn linux_run_nft_script(nft: &PathBuf, script: &str) -> Result<(), String> {
+    if script.trim().is_empty() {
+        return Ok(());
     }
-
-    let mut script = format!(
-        "flush table inet {table}\n\
-         add chain inet {table} output {{ type filter hook output priority filter; policy accept; }}\n\
-         add chain inet {table} input {{ type filter hook input priority filter; policy accept; }}\n"
-    );
-    for rule in rules.iter().filter(|rule| rule.enabled) {
-        let key = linux_rule_key(rule);
-        let cgroup = format!("pulsenet/{uid}/{key}");
-        if rule.blocked {
-            script.push_str(&format!(
-                "add rule inet {table} output socket cgroupv2 level 3 \"{cgroup}\" counter drop\n\
-                 add rule inet {table} input socket cgroupv2 level 3 \"{cgroup}\" counter drop\n"
-            ));
-            continue;
-        }
-        if let Some(limit) = rule.upload_limit_bps.filter(|limit| *limit > 0) {
-            let bytes = (limit / 8).max(128);
-            let burst = (bytes / 5).clamp(4096, 1_048_576);
-            script.push_str(&format!(
-                "add rule inet {table} output socket cgroupv2 level 3 \"{cgroup}\" limit rate over {bytes} bytes/second burst {burst} bytes counter drop\n"
-            ));
-        }
-        if let Some(limit) = rule.download_limit_bps.filter(|limit| *limit > 0) {
-            let bytes = (limit / 8).max(128);
-            let burst = (bytes / 5).clamp(4096, 1_048_576);
-            script.push_str(&format!(
-                "add rule inet {table} input socket cgroupv2 level 3 \"{cgroup}\" limit rate over {bytes} bytes/second burst {burst} bytes counter drop\n"
-            ));
-        }
-    }
-
     let mut child = Command::new(nft)
         .args(["-f", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("nft-exec-failed:{error}"))?;
     child
@@ -605,13 +937,90 @@ fn linux_apply_nft_rules(
         .ok_or_else(|| "nft-stdin-unavailable".to_string())?
         .write_all(script.as_bytes())
         .map_err(|error| format!("nft-write-failed:{error}"))?;
-    let status = child
-        .wait()
+    let output = child
+        .wait_with_output()
         .map_err(|error| format!("nft-wait-failed:{error}"))?;
-    status
-        .success()
-        .then_some(())
-        .ok_or_else(|| format!("nft-apply-failed:{}", status.code().unwrap_or(-1)))
+    output.status.success().then_some(()).ok_or_else(|| {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            format!("nft-apply-failed:{}", output.status.code().unwrap_or(-1))
+        } else {
+            format!(
+                "nft-apply-failed:{}:{stderr}",
+                output.status.code().unwrap_or(-1)
+            )
+        }
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn linux_apply_nft_rules(
+    nft: &PathBuf,
+    uid: u32,
+    rules: &[BandwidthLimitRule],
+    blocked_endpoints: &HashMap<String, HashSet<LinuxNftSocketEndpoint>>,
+) -> Result<(), String> {
+    let table = format!("pulsenet_{uid}");
+    let table_exists = linux_run_nft(nft, &["list", "table", "inet", &table]).is_ok();
+    let replace_table = if table_exists {
+        format!("delete table inet {table}\nadd table inet {table}\n")
+    } else {
+        format!("add table inet {table}\n")
+    };
+
+    // Replacing our private table in one nft batch removes old chains, sets and
+    // named limit objects together. `flush table` only clears chains and would
+    // leave old set/object names behind, making the next update fail at add set.
+    let mut script = format!(
+        "{replace_table}\
+         add chain inet {table} output {{ type filter hook output priority filter; policy accept; }}\n\
+         add chain inet {table} input {{ type filter hook input priority filter; policy accept; }}\n"
+    );
+    for rule in rules.iter().filter(|rule| rule.enabled) {
+        let key = linux_rule_key(rule);
+        let cgroup_match = linux_nft_cgroup_match(uid, &key);
+        let empty = HashSet::new();
+        let endpoints = blocked_endpoints.get(&key).unwrap_or(&empty);
+        script.push_str(&linux_nft_create_blocked_socket_sets(
+            &table,
+            &key,
+            endpoints,
+            rule.blocked,
+        ));
+        if rule.blocked {
+            script.push_str(&format!(
+                "add rule inet {table} output {cgroup_match} counter drop\n\
+                 add rule inet {table} input {cgroup_match} counter drop\n"
+            ));
+            continue;
+        }
+        if let Some(limit) = rule.upload_limit_bps.filter(|limit| *limit > 0) {
+            let bytes = (limit / 8).max(128);
+            let limit_name = format!("up_{key}");
+            script.push_str(&format!(
+                "add limit inet {table} {limit_name} {{ rate over {bytes} bytes/second; }}\n\
+                 add rule inet {table} output {cgroup_match} limit name \"{limit_name}\" counter drop\n"
+            ));
+        }
+        if let Some(limit) = rule.download_limit_bps.filter(|limit| *limit > 0) {
+            let bytes = (limit / 8).max(128);
+            let limit_name = format!("down_{key}");
+            script.push_str(&format!(
+                "add limit inet {table} {limit_name} {{ rate over {bytes} bytes/second; }}\n\
+                 add rule inet {table} input {cgroup_match} limit name \"{limit_name}\" counter drop\n"
+            ));
+        }
+        script.push_str(&linux_nft_existing_socket_limit_rules(
+            &table,
+            uid,
+            &key,
+            endpoints,
+            rule.upload_limit_bps,
+            rule.download_limit_bps,
+        ));
+    }
+
+    linux_run_nft_script(nft, &script)
 }
 
 #[cfg(target_os = "linux")]
@@ -623,7 +1032,12 @@ fn linux_move_matching_processes(uid: u32, rules: &[BandwidthLimitRule]) {
             let destination = PathBuf::from(LINUX_NETWORK_CGROUP_ROOT)
                 .join(uid.to_string())
                 .join(linux_rule_key(rule));
-            let _ = fs::create_dir_all(&destination);
+            if let Err(error) = fs::create_dir_all(&destination) {
+                eprintln!(
+                    "PulseNet network control: cannot create cgroup {}: {error}",
+                    destination.display()
+                );
+            }
             (rule.executable_path.clone(), destination)
         })
         .collect();
@@ -652,7 +1066,14 @@ fn linux_move_matching_processes(uid: u32, rules: &[BandwidthLimitRule]) {
         let Some(destination) = destinations.get(executable.as_ref()) else {
             continue;
         };
-        let _ = fs::write(destination.join("cgroup.procs"), pid.to_string());
+        if let Err(error) = fs::write(destination.join("cgroup.procs"), pid.to_string()) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!(
+                    "PulseNet network control: cannot assign PID {pid} to cgroup {}: {error}",
+                    destination.display()
+                );
+            }
+        }
     }
 }
 
@@ -664,9 +1085,25 @@ fn linux_helper_is_running() -> bool {
     let Ok(pid) = pid.trim().parse::<u32>() else {
         return false;
     };
-    fs::read_to_string(format!("/proc/{pid}/cmdline"))
-        .map(|command| command.contains(LINUX_NETWORK_HELPER_ARGUMENT))
-        .unwrap_or(false)
+    let command = fs::read_to_string(format!("/proc/{pid}/cmdline"));
+    let status = fs::read_to_string(format!("/proc/{pid}/status"));
+    match (command, status) {
+        (Ok(command), Ok(status)) => {
+            command.contains(LINUX_NETWORK_HELPER_ARGUMENT)
+                && linux_process_has_limiter_capabilities(&status)
+        }
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_process_has_limiter_capabilities(status: &str) -> bool {
+    const REQUIRED: u64 = (1 << 1) | (1 << 12) | (1 << 19) | (1 << 21);
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("CapEff:").map(str::trim))
+        .and_then(|value| u64::from_str_radix(value, 16).ok())
+        .is_some_and(|effective| effective & REQUIRED == REQUIRED)
 }
 
 #[cfg(target_os = "linux")]
@@ -687,6 +1124,7 @@ fn run_linux_network_helper() -> Result<(), String> {
     .map_err(|error| format!("helper-pid-write-failed:{error}"))?;
 
     let mut applied = HashMap::<u32, u64>::new();
+    let mut applied_socket_fingerprints = HashMap::<u32, u64>::new();
     loop {
         let mut active_users = HashSet::new();
         if let Ok(entries) = fs::read_dir("/run/user") {
@@ -713,11 +1151,27 @@ fn run_linux_network_helper() -> Result<(), String> {
                 };
                 active_users.insert(uid);
                 linux_move_matching_processes(uid, &rules);
+                let blocked_endpoints = linux_collect_blocked_socket_endpoints(uid, &rules);
+                let socket_fingerprint = linux_blocked_endpoint_fingerprint(&blocked_endpoints);
                 let fingerprint = linux_hash64(&data);
-                if applied.get(&uid) != Some(&fingerprint)
-                    && linux_apply_nft_rules(&nft, uid, &rules).is_ok()
-                {
-                    applied.insert(uid, fingerprint);
+                if applied.get(&uid) != Some(&fingerprint) {
+                    match linux_apply_nft_rules(&nft, uid, &rules, &blocked_endpoints) {
+                        Ok(()) => {
+                            applied.insert(uid, fingerprint);
+                            applied_socket_fingerprints.insert(uid, socket_fingerprint);
+                        }
+                        Err(error) => eprintln!("PulseNet network control: failed to apply rules for UID {uid}: {error}"),
+                    }
+                } else if applied_socket_fingerprints.get(&uid) != Some(&socket_fingerprint) {
+                    let table = format!("pulsenet_{uid}");
+                    let script =
+                        linux_nft_refresh_blocked_socket_sets(&table, &rules, &blocked_endpoints);
+                    match linux_run_nft_script(&nft, &script) {
+                        Ok(()) => {
+                            applied_socket_fingerprints.insert(uid, socket_fingerprint);
+                        }
+                        Err(error) => eprintln!("PulseNet network control: failed to refresh active sockets for UID {uid}: {error}"),
+                    }
                 }
             }
         }
@@ -727,8 +1181,14 @@ fn run_linux_network_helper() -> Result<(), String> {
             .filter(|uid| !active_users.contains(uid))
             .collect();
         for uid in stale {
-            if linux_apply_nft_rules(&nft, uid, &[]).is_ok() {
-                applied.remove(&uid);
+            match linux_apply_nft_rules(&nft, uid, &[], &HashMap::new()) {
+                Ok(()) => {
+                    applied.remove(&uid);
+                    applied_socket_fingerprints.remove(&uid);
+                }
+                Err(error) => eprintln!(
+                    "PulseNet network control: failed to remove rules for UID {uid}: {error}"
+                ),
             }
         }
         thread::sleep(Duration::from_secs(1));
@@ -1577,7 +2037,16 @@ fn reset_network_application_usage_history(app: &tauri::AppHandle) -> Result<(),
     let _guard = network_application_usage_lock()
         .lock()
         .map_err(|_| "network-usage-history-lock-poisoned".to_string())?;
-    save_network_application_usage_state(app, &PersistedNetworkApplicationUsageState::default())
+    #[cfg(target_os = "linux")]
+    reset_linux_application_usage_tracker();
+    #[cfg(target_os = "linux")]
+    let state = PersistedNetworkApplicationUsageState {
+        reset_pending: true,
+        applications: Vec::new(),
+    };
+    #[cfg(not(target_os = "linux"))]
+    let state = PersistedNetworkApplicationUsageState::default();
+    save_network_application_usage_state(app, &state)
 }
 
 #[cfg(target_os = "windows")]
@@ -2088,7 +2557,7 @@ fn get_platform_network_usage_snapshot() -> NetworkUsageSnapshot {
         .map(|adapter| adapter.sent_bytes)
         .sum::<u64>();
 
-    let processes = linux_process_usage();
+    let (processes, applications) = linux_process_usage();
 
     NetworkUsageSnapshot {
         timestamp_ms: now_millis(),
@@ -2096,7 +2565,7 @@ fn get_platform_network_usage_snapshot() -> NetworkUsageSnapshot {
         sent_bytes,
         adapters,
         processes,
-        applications: vec![],
+        applications,
         error: None,
     }
 }
@@ -2206,16 +2675,221 @@ fn linux_process_socket_inodes(pid: u32) -> Vec<String> {
 }
 
 #[cfg(target_os = "linux")]
-fn linux_process_usage() -> Vec<NetworkProcessUsage> {
-    let socket_map = linux_socket_inode_map();
-    if socket_map.is_empty() {
-        return vec![];
+fn linux_parse_ss_tcp_download_usage(raw: &str) -> HashMap<String, (u32, u64)> {
+    let mut samples = HashMap::new();
+    let mut inode = None::<String>;
+    let mut pid = None::<u32>;
+
+    for line in raw.lines() {
+        if !line.starts_with(char::is_whitespace) {
+            inode = None;
+            pid = None;
+        }
+        for field in line.split_whitespace() {
+            if let Some(value) = field.strip_prefix("ino:") {
+                if !value.is_empty() {
+                    inode = Some(value.to_string());
+                }
+            }
+            if let Some(position) = field.find("pid=") {
+                let value = &field[position + 4..];
+                let digits = value
+                    .chars()
+                    .take_while(char::is_ascii_digit)
+                    .collect::<String>();
+                pid = digits.parse::<u32>().ok();
+            }
+            if let Some(value) = field.strip_prefix("bytes_received:") {
+                let Some(download_bytes) = value.parse::<u64>().ok() else {
+                    continue;
+                };
+                if let (Some(inode), Some(pid)) = (inode.as_ref(), pid) {
+                    samples.insert(inode.clone(), (pid, download_bytes));
+                }
+            }
+        }
+    }
+    samples
+}
+
+#[cfg(target_os = "linux")]
+fn linux_read_tcp_download_usage() -> HashMap<String, (u32, u64)> {
+    let Ok(output) = Command::new("ss")
+        .args(["-t", "-i", "-e", "-n", "-p", "-H"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return HashMap::new();
+    };
+    if !output.status.success() {
+        return HashMap::new();
+    }
+    linux_parse_ss_tcp_download_usage(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_application_usage_tracker() -> &'static Mutex<LinuxApplicationUsageTracker> {
+    static TRACKER: OnceLock<Mutex<LinuxApplicationUsageTracker>> = OnceLock::new();
+    TRACKER.get_or_init(|| Mutex::new(LinuxApplicationUsageTracker::default()))
+}
+
+#[cfg(target_os = "linux")]
+fn seed_linux_application_usage_tracker(app: &tauri::AppHandle) {
+    let Ok(state) = load_network_application_usage_state(app) else {
+        return;
+    };
+    let Ok(mut tracker) = linux_application_usage_tracker().lock() else {
+        return;
+    };
+    if tracker.initialized {
+        return;
+    }
+    for application in state.applications {
+        tracker
+            .baseline_applications
+            .insert(application.key.clone());
+        tracker.applications.insert(
+            application.key,
+            LinuxTrackedApplication {
+                name: application.name,
+                path: application.path,
+                download_bytes: application.last_helper_download_bytes,
+            },
+        );
+    }
+    tracker.initialized = true;
+}
+
+#[cfg(target_os = "linux")]
+fn linux_update_application_usage_tracker(
+    tracker: &mut LinuxApplicationUsageTracker,
+    samples: &[LinuxTcpUsageSample],
+    now_ms: u128,
+) -> Vec<NetworkApplicationUsage> {
+    let mut observed_baseline_applications = HashSet::new();
+    for sample in samples {
+        let key = network_application_usage_key(&sample.name, sample.path.as_deref());
+        let is_baseline_application = tracker.baseline_applications.contains(&key);
+        if is_baseline_application {
+            observed_baseline_applications.insert(key.clone());
+        }
+        let delta = match tracker.sockets.get_mut(&sample.inode) {
+            Some(socket) if socket.application_key == key => {
+                let delta = sample
+                    .download_bytes
+                    .checked_sub(socket.last_download_bytes)
+                    .unwrap_or(sample.download_bytes);
+                socket.last_download_bytes = sample.download_bytes;
+                socket.last_seen_ms = now_ms;
+                delta
+            }
+            Some(socket) => {
+                socket.application_key = key.clone();
+                socket.last_download_bytes = sample.download_bytes;
+                socket.last_seen_ms = now_ms;
+                if is_baseline_application {
+                    0
+                } else {
+                    sample.download_bytes
+                }
+            }
+            None => {
+                tracker.sockets.insert(
+                    sample.inode.clone(),
+                    LinuxTrackedSocket {
+                        application_key: key.clone(),
+                        last_download_bytes: sample.download_bytes,
+                        last_seen_ms: now_ms,
+                    },
+                );
+                if is_baseline_application {
+                    0
+                } else {
+                    sample.download_bytes
+                }
+            }
+        };
+        let application =
+            tracker
+                .applications
+                .entry(key)
+                .or_insert_with(|| LinuxTrackedApplication {
+                    name: sample.name.clone(),
+                    path: sample.path.clone(),
+                    download_bytes: 0,
+                });
+        application.name.clone_from(&sample.name);
+        application.path.clone_from(&sample.path);
+        application.download_bytes = application.download_bytes.saturating_add(delta);
+    }
+    for key in observed_baseline_applications {
+        tracker.baseline_applications.remove(&key);
     }
 
+    if tracker.sockets.len() > 50_000 {
+        let mut oldest = tracker
+            .sockets
+            .iter()
+            .map(|(inode, socket)| (inode.clone(), socket.last_seen_ms))
+            .collect::<Vec<_>>();
+        oldest.sort_by_key(|(_, last_seen_ms)| *last_seen_ms);
+        for (inode, _) in oldest.into_iter().take(tracker.sockets.len() - 50_000) {
+            tracker.sockets.remove(&inode);
+        }
+    }
+
+    let mut applications = tracker
+        .applications
+        .values()
+        .filter(|application| application.download_bytes > 0)
+        .map(|application| NetworkApplicationUsage {
+            name: application.name.clone(),
+            path: application.path.clone(),
+            icon_data_url: None,
+            download_bytes: application.download_bytes,
+        })
+        .collect::<Vec<_>>();
+    applications.sort_by(|left, right| {
+        right
+            .download_bytes
+            .cmp(&left.download_bytes)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+    applications
+}
+
+#[cfg(target_os = "linux")]
+fn linux_tracked_application_usage(
+    samples: &[LinuxTcpUsageSample],
+) -> Vec<NetworkApplicationUsage> {
+    let Ok(mut tracker) = linux_application_usage_tracker().lock() else {
+        return Vec::new();
+    };
+    linux_update_application_usage_tracker(&mut tracker, samples, now_millis())
+}
+
+#[cfg(target_os = "linux")]
+fn reset_linux_application_usage_tracker() {
+    if let Ok(mut tracker) = linux_application_usage_tracker().lock() {
+        tracker.applications.clear();
+        tracker.baseline_applications.clear();
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_process_usage() -> (Vec<NetworkProcessUsage>, Vec<NetworkApplicationUsage>) {
+    let socket_map = linux_socket_inode_map();
+    if socket_map.is_empty() {
+        return (vec![], linux_tracked_application_usage(&[]));
+    }
+    let tcp_usage = linux_read_tcp_download_usage();
+
     let Ok(entries) = fs::read_dir("/proc") else {
-        return vec![];
+        return (vec![], linux_tracked_application_usage(&[]));
     };
     let mut grouped: HashMap<u32, (u32, HashSet<String>)> = HashMap::new();
+    let mut download_samples = Vec::new();
 
     for entry in entries.flatten() {
         let Some(pid) = entry
@@ -2228,7 +2902,25 @@ fn linux_process_usage() -> Vec<NetworkProcessUsage> {
             continue;
         };
 
-        for inode in linux_process_socket_inodes(pid) {
+        let mut inodes = linux_process_socket_inodes(pid);
+        inodes.sort();
+        inodes.dedup();
+        if inodes.is_empty() {
+            continue;
+        }
+        let path = linux_process_path(pid);
+        let name = linux_process_name(pid, path.as_deref());
+        for inode in inodes {
+            if let Some((owner_pid, download_bytes)) = tcp_usage.get(&inode) {
+                if *owner_pid == pid {
+                    download_samples.push(LinuxTcpUsageSample {
+                        inode: inode.clone(),
+                        name: name.clone(),
+                        path: path.clone(),
+                        download_bytes: *download_bytes,
+                    });
+                }
+            }
             let Some(remotes) = socket_map.get(&inode) else {
                 continue;
             };
@@ -2259,7 +2951,8 @@ fn linux_process_usage() -> Vec<NetworkProcessUsage> {
 
     processes.sort_by(|left, right| right.connections.cmp(&left.connections));
     processes.truncate(40);
-    processes
+    let applications = linux_tracked_application_usage(&download_samples);
+    (processes, applications)
 }
 
 #[cfg(target_os = "linux")]
@@ -3008,8 +3701,7 @@ async fn test_dns_servers_with_custom(
     let mut results = Vec::new();
     for server in all_servers {
         let start = Instant::now();
-        let socket_addr = parse_dns_server_socket(&server);
-        if socket_addr.is_none() {
+        let Some(socket_addr) = parse_dns_server_socket(&server) else {
             results.push(DnsResult {
                 server,
                 status: false,
@@ -3017,20 +3709,28 @@ async fn test_dns_servers_with_custom(
                 error: Some("invalid-server".to_string()),
             });
             continue;
-        }
-        let mut resolver_config = ResolverConfig::new();
-        let name_server = NameServerConfig {
-            socket_addr: socket_addr.unwrap(),
-            protocol: Protocol::Udp,
-            tls_dns_name: None,
-            trust_negative_responses: false,
-            bind_addr: None,
         };
+        let mut resolver_config = ResolverConfig::from_parts(None, vec![], vec![]);
+        let mut connection = ConnectionConfig::udp();
+        connection.port = socket_addr.port();
+        let name_server = NameServerConfig::new(socket_addr.ip(), false, vec![connection]);
         resolver_config.add_name_server(name_server);
         let mut opts = ResolverOpts::default();
         opts.timeout = Duration::from_millis(DNS_TIMEOUT_MS);
 
-        let resolver = TokioAsyncResolver::tokio(resolver_config, opts);
+        let resolver =
+            Resolver::builder_with_config(resolver_config, TokioRuntimeProvider::default())
+                .with_options(opts)
+                .build();
+        let Ok(resolver) = resolver else {
+            results.push(DnsResult {
+                server,
+                status: false,
+                response_time_ms: start.elapsed().as_millis(),
+                error: Some("resolver-init-failed".to_string()),
+            });
+            continue;
+        };
         let lookup = timeout(
             Duration::from_millis(DNS_TIMEOUT_MS),
             resolver.lookup_ip(sanitized.clone()),
@@ -3569,6 +4269,8 @@ async fn get_public_network_info() -> PublicNetworkInfo {
 
 #[tauri::command]
 async fn get_network_usage_snapshot(app: AppHandle) -> NetworkUsageSnapshot {
+    #[cfg(target_os = "linux")]
+    seed_linux_application_usage_tracker(&app);
     tokio::task::spawn_blocking(move || {
         let mut snapshot = get_cached_network_usage_snapshot();
         match merge_network_application_usage_history(&app, &snapshot.applications) {
@@ -3715,110 +4417,6 @@ async fn speedtest_hetzner() -> SpeedTestResult {
     }
 }
 
-fn parse_version_parts(version: &str) -> Vec<u64> {
-    version
-        .trim_start_matches('v')
-        .split('.')
-        .map(|part| part.parse::<u64>().unwrap_or(0))
-        .collect()
-}
-
-fn is_newer_version(latest: &str, current: &str) -> bool {
-    let latest_parts = parse_version_parts(latest);
-    let current_parts = parse_version_parts(current);
-    let max_len = latest_parts.len().max(current_parts.len());
-    for idx in 0..max_len {
-        let left = *latest_parts.get(idx).unwrap_or(&0);
-        let right = *current_parts.get(idx).unwrap_or(&0);
-        if left > right {
-            return true;
-        }
-        if left < right {
-            return false;
-        }
-    }
-    false
-}
-
-#[tauri::command]
-async fn check_for_updates(include_prerelease: Option<bool>) -> UpdateCheckResult {
-    let client = HttpClient::new();
-    let include_prerelease = include_prerelease.unwrap_or(false);
-    let current_version = env!("CARGO_PKG_VERSION").to_string();
-    let response = client
-        .get(if include_prerelease {
-            GITHUB_RELEASES_LIST_URL
-        } else {
-            GITHUB_RELEASES_URL
-        })
-        .header("User-Agent", "PulseNet")
-        .send()
-        .await;
-    if response.is_err() {
-        return UpdateCheckResult {
-            current_version,
-            latest_version: String::new(),
-            update_available: false,
-            is_prerelease: false,
-            url: format!("https://github.com/{}/releases/latest", GITHUB_REPO),
-            error: Some("update-check-failed".to_string()),
-        };
-    }
-    let json = response.unwrap().json::<serde_json::Value>().await;
-    if json.is_err() {
-        return UpdateCheckResult {
-            current_version,
-            latest_version: String::new(),
-            update_available: false,
-            is_prerelease: false,
-            url: format!("https://github.com/{}/releases/latest", GITHUB_REPO),
-            error: Some("invalid-response".to_string()),
-        };
-    }
-    let data = json.unwrap();
-    let release = if include_prerelease {
-        data.as_array()
-            .and_then(|items| {
-                items.iter().find(|item| {
-                    let is_draft = item.get("draft").and_then(|v| v.as_bool()).unwrap_or(false);
-                    !is_draft
-                })
-            })
-            .cloned()
-            .unwrap_or(serde_json::Value::Null)
-    } else {
-        data
-    };
-    let latest = release
-        .get("tag_name")
-        .and_then(|value| value.as_str())
-        .unwrap_or("")
-        .trim_start_matches('v')
-        .to_string();
-    let update_available = !latest.is_empty() && is_newer_version(&latest, &current_version);
-    let is_prerelease = release
-        .get("prerelease")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false);
-    let url = release
-        .get("html_url")
-        .and_then(|value| value.as_str())
-        .unwrap_or(&format!(
-            "https://github.com/{}/releases/latest",
-            GITHUB_REPO
-        ))
-        .to_string();
-
-    UpdateCheckResult {
-        current_version,
-        latest_version: latest,
-        update_available,
-        is_prerelease,
-        url,
-        error: None,
-    }
-}
-
 fn handle_close_requested(window: &Window, state: &State<AppState>) {
     let action = state
         .close_action
@@ -3863,6 +4461,113 @@ fn is_window_maximized(window: Window) -> bool {
 #[cfg(test)]
 mod bandwidth_limiter_tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn matches_each_component_of_the_linux_cgroup_path_at_its_own_level() {
+        assert_eq!(
+            linux_nft_cgroup_match(1000, "0123456789abcdef"),
+            "socket cgroupv2 level 1 \"pulsenet\" socket cgroupv2 level 2 \"pulsenet/1000\" socket cgroupv2 level 3 \"pulsenet/1000/0123456789abcdef\""
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn requires_all_capabilities_needed_by_the_linux_limiter_helper() {
+        assert!(linux_process_has_limiter_capabilities(
+            "Name:\tpulsenet\nCapEff:\t0000000000283002\n"
+        ));
+        assert!(!linux_process_has_limiter_capabilities(
+            "Name:\tpulsenet\nCapEff:\t0000000000203002\n"
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_proc_net_ipv4_and_ipv6_socket_endpoints() {
+        assert_eq!(
+            linux_parse_proc_net_endpoint("0100007F:1F90", true),
+            Some((std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
+        );
+        assert_eq!(
+            linux_parse_proc_net_endpoint("00000000000000000000000001000000:01BB", false),
+            Some((std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST), 443))
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn creates_socket_rules_for_existing_tcp_udp_and_local_proxy_connections() {
+        let endpoints = HashSet::from([
+            LinuxNftSocketEndpoint {
+                transport: LinuxNftTransport::Tcp,
+                address: "127.0.0.1".parse().unwrap(),
+                port: 45_678,
+            },
+            LinuxNftSocketEndpoint {
+                transport: LinuxNftTransport::Udp,
+                address: "::".parse().unwrap(),
+                port: 45_679,
+            },
+        ]);
+        let script = linux_nft_create_blocked_socket_sets(
+            "pulsenet_1000",
+            "0123456789abcdef",
+            &endpoints,
+            true,
+        );
+        assert!(script.contains("ip saddr . tcp sport @t4e_0123456789abcdef"));
+        assert!(script.contains("ip daddr . tcp dport @t4e_0123456789abcdef"));
+        assert!(script.contains("udp sport @u6p_0123456789abcdef"));
+        assert!(script.contains("udp dport @u6p_0123456789abcdef"));
+        assert!(script.contains("127.0.0.1 . 45678"));
+        assert!(script.contains("45679"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn existing_socket_bandwidth_rules_share_per_application_direction_limits() {
+        let key = "0123456789abcdef";
+        let endpoints = HashSet::from([
+            LinuxNftSocketEndpoint {
+                transport: LinuxNftTransport::Tcp,
+                address: "0.0.0.0".parse().unwrap(),
+                port: 45_678,
+            },
+            LinuxNftSocketEndpoint {
+                transport: LinuxNftTransport::Udp,
+                address: "2001:db8::1".parse().unwrap(),
+                port: 45_679,
+            },
+        ]);
+        let script = linux_nft_existing_socket_limit_rules(
+            "pulsenet_1000",
+            1000,
+            key,
+            &endpoints,
+            Some(8_000_000),
+            Some(16_000_000),
+        );
+        assert!(script.contains("socket cgroupv2 level 3 != \"pulsenet/1000/0123456789abcdef\""));
+        assert!(
+            script.contains("tcp sport @t4p_0123456789abcdef limit name \"up_0123456789abcdef\"")
+        );
+        assert!(
+            script.contains("tcp dport @t4p_0123456789abcdef limit name \"down_0123456789abcdef\"")
+        );
+        assert!(script.contains("ip6 saddr . udp sport @u6e_0123456789abcdef"));
+        assert!(!script.contains("@t6e_0123456789abcdef"));
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_sample(inode: &str, download_bytes: u64) -> LinuxTcpUsageSample {
+        LinuxTcpUsageSample {
+            inode: inode.to_string(),
+            name: "Example".to_string(),
+            path: Some("/usr/bin/example".to_string()),
+            download_bytes,
+        }
+    }
 
     fn test_application_usage(download_bytes: u64) -> NetworkApplicationUsage {
         NetworkApplicationUsage {
@@ -3928,6 +4633,102 @@ mod bandwidth_limiter_tests {
             validate_bandwidth_limit(Some(25_000_000)).unwrap(),
             Some(25_000_000)
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_linux_tcp_info_bytes_and_socket_owners() {
+        let raw = concat!(
+            "ESTAB 0 0 10.0.0.2:40000 10.0.0.3:443 users:((\"example\",pid=42,fd=7)) ino:123 sk:1\n",
+            "\t ts sack cubic bytes_sent:80 bytes_received:910 segs_in:10\n"
+        );
+        let usage = linux_parse_ss_tcp_download_usage(raw);
+
+        assert_eq!(usage.get("123"), Some(&(42, 910)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reads_download_bytes_from_a_live_linux_tcp_socket() {
+        use std::io::{Read, Write};
+        use std::net::{TcpListener, TcpStream};
+        use std::os::fd::AsRawFd;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut server, _) = listener.accept().unwrap();
+        let payload = vec![b'x'; 16 * 1024];
+        client.set_nodelay(true).unwrap();
+        server.set_nodelay(true).unwrap();
+        (&client).write_all(&payload).unwrap();
+        let mut received = vec![0; payload.len()];
+        server.read_exact(&mut received).unwrap();
+
+        let fd_path = format!("/proc/self/fd/{}", server.as_raw_fd());
+        let fd_target = std::fs::read_link(fd_path).unwrap();
+        let inode = fd_target
+            .to_string_lossy()
+            .strip_prefix("socket:[")
+            .and_then(|value| value.strip_suffix(']'))
+            .unwrap()
+            .to_string();
+        let usage = linux_read_tcp_download_usage();
+        let (owner_pid, download_bytes) = usage.get(&inode).copied().unwrap();
+
+        assert_eq!(owner_pid, std::process::id());
+        assert!(download_bytes >= payload.len() as u64);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_history_keeps_closed_socket_bytes_without_double_counting_open_ones() {
+        let mut tracker = LinuxApplicationUsageTracker::default();
+        let first = linux_update_application_usage_tracker(
+            &mut tracker,
+            &[linux_sample("101", 1_000)],
+            1_000,
+        );
+        assert_eq!(first[0].download_bytes, 1_000);
+
+        let second = linux_update_application_usage_tracker(
+            &mut tracker,
+            &[linux_sample("101", 1_200), linux_sample("102", 50)],
+            2_000,
+        );
+        assert_eq!(second[0].download_bytes, 1_250);
+
+        let third = linux_update_application_usage_tracker(
+            &mut tracker,
+            &[linux_sample("102", 100)],
+            3_000,
+        );
+        assert_eq!(third[0].download_bytes, 1_300);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_tracker_seeds_persisted_totals_without_recounting_live_sockets() {
+        let sample = linux_sample("201", 800);
+        let key = network_application_usage_key(&sample.name, sample.path.as_deref());
+        let mut tracker = LinuxApplicationUsageTracker::default();
+        tracker.baseline_applications.insert(key.clone());
+        tracker.applications.insert(
+            key,
+            LinuxTrackedApplication {
+                name: sample.name.clone(),
+                path: sample.path.clone(),
+                download_bytes: 500,
+            },
+        );
+
+        let first = linux_update_application_usage_tracker(&mut tracker, &[sample], 1_000);
+        assert_eq!(first[0].download_bytes, 500);
+        let next = linux_update_application_usage_tracker(
+            &mut tracker,
+            &[linux_sample("201", 850)],
+            2_000,
+        );
+        assert_eq!(next[0].download_bytes, 550);
     }
 
     #[cfg(target_os = "windows")]
@@ -4072,6 +4873,80 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                use gtk::prelude::*;
+
+                let native_window = window.gtk_window()?;
+                let webview_container = window.default_vbox()?;
+                for webview_widget in webview_container.children() {
+                    let native_window = native_window.clone();
+                    webview_widget.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
+                    webview_widget.connect_button_press_event(move |widget, event| {
+                        if event.button() != 1 {
+                            return gtk::glib::Propagation::Proceed;
+                        }
+
+                        let (x, y) = event.position();
+                        let (root_x, root_y) = event.root();
+                        let edge_size = f64::from(native_window.scale_factor()) * 5.0 + 1.0;
+                        let width = f64::from(widget.allocation().width());
+                        let height = f64::from(widget.allocation().height());
+                        let on_left_edge = x <= edge_size;
+                        let on_right_edge = x >= width - edge_size;
+                        let on_top_edge = y <= edge_size;
+                        let on_bottom_edge = y >= height - edge_size;
+
+                        let resize_edge =
+                            match (on_left_edge, on_right_edge, on_top_edge, on_bottom_edge) {
+                                (true, _, true, _) => Some(gtk::gdk::WindowEdge::NorthWest),
+                                (_, true, true, _) => Some(gtk::gdk::WindowEdge::NorthEast),
+                                (true, _, _, true) => Some(gtk::gdk::WindowEdge::SouthWest),
+                                (_, true, _, true) => Some(gtk::gdk::WindowEdge::SouthEast),
+                                (true, _, _, _) => Some(gtk::gdk::WindowEdge::West),
+                                (_, true, _, _) => Some(gtk::gdk::WindowEdge::East),
+                                (_, _, true, _) => Some(gtk::gdk::WindowEdge::North),
+                                (_, _, _, true) => Some(gtk::gdk::WindowEdge::South),
+                                _ => None,
+                            };
+
+                        if let Some(edge) = resize_edge {
+                            native_window.begin_resize_drag(
+                                edge,
+                                event.button() as i32,
+                                root_x as i32,
+                                root_y as i32,
+                                event.time(),
+                            );
+                            return gtk::glib::Propagation::Stop;
+                        }
+
+                        let in_titlebar = y >= edge_size && y < 32.0;
+                        let on_window_controls = x >= width - 100.0;
+                        if !in_titlebar || on_window_controls {
+                            return gtk::glib::Propagation::Proceed;
+                        }
+
+                        if event.event_type() == gtk::gdk::EventType::DoubleButtonPress {
+                            if native_window.is_maximized() {
+                                native_window.unmaximize();
+                            } else {
+                                native_window.maximize();
+                            }
+                        } else {
+                            native_window.begin_move_drag(
+                                event.button() as i32,
+                                root_x as i32,
+                                root_y as i32,
+                                event.time(),
+                            );
+                        }
+
+                        gtk::glib::Propagation::Stop
+                    });
+                }
+            }
 
             Ok(())
         })

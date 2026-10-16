@@ -9,7 +9,6 @@ dist/
 build/
 dist-electron/
 src-tauri/target/
-src-tauri/target/
 src-tauri/gen/
 **/target/
 *.exe

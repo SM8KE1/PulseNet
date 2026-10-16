@@ -1,10 +1,11 @@
-﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { memo, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
 import Lottie from 'lottie-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import 'flag-icons/css/flag-icons.min.css';
 import ThemeToggle from './ThemeToggle';
 import GitHubIcon from './GitHubIcon';
@@ -13,6 +14,27 @@ import {
   hasActiveBandwidthLimit,
   normalizeLimiterPath,
 } from './networkUsage.mjs';
+import {
+  BANDWIDTH_UNIT_FACTORS,
+  DONATE_NUDGE_DELAY_MS,
+  DRAG_OVERLAY_DROP_ANIMATION,
+  HOST_PROFILES,
+  NETWORK_DOWNLOAD_CHART_COLORS,
+  buildNetworkDownloadSegments,
+  NETWORK_PROCESS_PREVIEW_LIMIT,
+  SPEED_PHASE_DOWNLOAD_DELAY_MS,
+  buildSparklinePath,
+  formatBandwidthLimit,
+  formatByteRate,
+  formatBytes,
+  getDefaultHosts,
+  getDnsAdapterKey,
+  getLatencyTone,
+  getNetworkProcessCategory,
+  getNetworkProcessStatus,
+  maskIpAddress,
+  shouldGroupNetworkProcess,
+} from './appCore.mjs';
 import iconIco from '../../assets/icon.ico';
 import iranFlag from '../../assets/iran.svg';
 import earthA from '../../assets/earth-a.svg';
@@ -47,155 +69,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const DRAG_OVERLAY_DROP_ANIMATION = {
-  duration: 220,
-  easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-};
-
-const PING_GOOD_THRESHOLD_MS = 120;
-const SPEED_PHASE_DOWNLOAD_DELAY_MS = 1200;
-const DONATE_NUDGE_DELAY_MS = 2 * 60 * 1000;
-const NETWORK_PROCESS_PREVIEW_LIMIT = 4;
-const NETWORK_DOWNLOAD_CHART_COLORS = [
-  'var(--accent)',
-  'var(--success)',
-  'var(--warning)',
-  'var(--danger)',
-  '#9b8cff',
-  '#42c4c7',
-];
-const NETWORK_DOWNLOAD_CHART_CIRCUMFERENCE = 2 * Math.PI * 46;
-const BANDWIDTH_UNIT_FACTORS = {
-  kbps: 1000,
-  mbps: 1000000,
-  kbytes: 8000,
-  mbytes: 8000000,
-};
-const DEFAULT_HOSTS = [
-  { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
-  { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
-  { type: 'default', label: 'Time.ir', host: 'time.ir' },
-  { type: 'default', label: 'YouTube', host: 'youtube.com' },
-];
-
-const getDnsAdapterKey = (adapter) => adapter?.id || adapter?.name || '';
-
-const getNetworkProcessCategory = (process) => {
-  const name = String(process?.name || '').toLowerCase();
-  const path = String(process?.path || '').toLowerCase();
-  const text = `${name} ${path}`;
-  if (!name || name.startsWith('pid ')) return 'unknown';
-  if (/(chrome|firefox|msedge|edge|brave|opera|vivaldi|iexplore|browser)/.test(text)) return 'browsers';
-  if (/(system|svchost|services|lsass|csrss|wininit|winlogon|dwm|spoolsv|dns|dhcp|ntoskrnl|registry|runtimebroker|searchhost)/.test(text)) return 'system';
-  return 'apps';
-};
-
-const getNetworkProcessStatus = (connections) => {
-  const value = Number(connections || 0);
-  if (value >= 20) return 'high';
-  if (value >= 3) return 'normal';
-  return 'idle';
-};
-
-const shouldGroupNetworkProcess = (process) => {
-  const name = String(process?.name || '').toLowerCase();
-  return getNetworkProcessCategory(process) === 'system' || name === 'svchost' || name === 'svchost.exe';
-};
-
-const HOST_PROFILES = {
-  gaming: [
-    { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
-    { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
-    { type: 'custom', id: 1700000000010, label: 'Steam', host: 'store.steampowered.com' },
-    { type: 'custom', id: 1700000000011, label: 'Discord', host: 'discord.com' },
-  ],
-  work: [
-    { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
-    { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
-    { type: 'custom', id: 1700000000020, label: 'GitHub', host: 'github.com' },
-    { type: 'custom', id: 1700000000021, label: 'Microsoft', host: 'microsoft.com' },
-  ],
-  streaming: [
-    { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
-    { type: 'default', label: 'Google DNS', host: '8.8.8.8' },
-    { type: 'custom', id: 1700000000030, label: 'YouTube', host: 'youtube.com' },
-    { type: 'custom', id: 1700000000031, label: 'Netflix', host: 'netflix.com' },
-  ],
-  iran: [
-    { type: 'default', label: 'Time.ir', host: 'time.ir' },
-    { type: 'custom', id: 1700000000040, label: 'Aparat', host: 'aparat.com' },
-    { type: 'custom', id: 1700000000041, label: 'Digikala', host: 'digikala.com' },
-    { type: 'default', label: 'Cloudflare DNS', host: '1.1.1.1' },
-  ],
-};
-
-const maskIpAddress = (ip) => {
-  const value = String(ip || '').trim();
-  if (!value || value === 'N/A') return 'N/A';
-  return value.includes(':') ? '••••:••••:••••:••••' : '•••.•••.•••.•••';
-};
-
-const formatBytes = (bytes) => {
-  const value = Number(bytes) || 0;
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let size = Math.max(0, value);
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-  const digits = size >= 100 || unitIndex === 0 ? 0 : size >= 10 ? 1 : 2;
-  return `${size.toFixed(digits)} ${units[unitIndex]}`;
-};
-
-const formatByteRate = (bytesPerSecond) => `${formatBytes(bytesPerSecond)}/s`;
-
-const formatBandwidthLimit = (bitsPerSecond) => {
-  const value = Number(bitsPerSecond || 0);
-  if (!value) return '--';
-  if (value >= 1000000) return `${(value / 1000000).toFixed(value >= 10000000 ? 0 : 1)} Mbps`;
-  return `${Math.round(value / 1000)} Kbps`;
-};
-
-const getDefaultHosts = () => DEFAULT_HOSTS.map((host) => ({ ...host }));
-
-const getLatencyTone = (timeMs, warningThresholdMs) => {
-  if (!Number.isFinite(timeMs)) return 'neutral';
-  if (timeMs > warningThresholdMs) return 'warning';
-  if (timeMs <= PING_GOOD_THRESHOLD_MS) return 'good';
-  return 'neutral';
-};
-
-const buildSparklinePath = (points, width, height, padding) => {
-  if (!points.length) return '';
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
-  const values = points.map((point) => point.value).filter((value) => Number.isFinite(value));
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(1, max - min);
-
-  let path = '';
-  let segmentOpen = false;
-
-  points.forEach((point) => {
-    const x = padding + point.ratio * chartWidth;
-    if (!Number.isFinite(point.value)) {
-      segmentOpen = false;
-      return;
-    }
-    const normalized = (point.value - min) / range;
-    const y = padding + chartHeight - normalized * chartHeight;
-    if (!segmentOpen) {
-      path += `M ${x.toFixed(2)} ${y.toFixed(2)}`;
-      segmentOpen = true;
-    } else {
-      path += ` L ${x.toFixed(2)} ${y.toFixed(2)}`;
-    }
-  });
-
-  return path;
-};
+const IS_LINUX_RUNTIME = typeof navigator !== 'undefined' && /Linux/i.test(navigator.userAgent);
 
 // Custom hook for managing all hosts with localStorage
 const useHosts = () => {
@@ -804,6 +678,40 @@ const DragPreviewCard = ({ label, host, moveText }) => (
   </div>
 );
 
+const AnimatedRate = memo(({ value }) => {
+  const initialRate = Math.max(0, Number(value) || 0);
+  const [displayRate, setDisplayRate] = useState(initialRate);
+  const displayRateRef = useRef(initialRate);
+
+  useEffect(() => {
+    const targetRate = Math.max(0, Number(value) || 0);
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      displayRateRef.current = targetRate;
+      setDisplayRate(targetRate);
+      return undefined;
+    }
+
+    const startRate = displayRateRef.current;
+    const startTime = performance.now();
+    const durationMs = 850;
+    let frameId = 0;
+    const animate = (now) => {
+      const progress = Math.min(1, (now - startTime) / durationMs);
+      const easedProgress = 1 - ((1 - progress) ** 3);
+      const nextRate = startRate + ((targetRate - startRate) * easedProgress);
+      displayRateRef.current = nextRate;
+      setDisplayRate(nextRate);
+      if (progress < 1) frameId = window.requestAnimationFrame(animate);
+    };
+
+    frameId = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [value]);
+
+  return <strong aria-live="off">{formatByteRate(displayRate)}</strong>;
+});
+
 const App = () => {
   const [isDarkMode, setDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -959,6 +867,56 @@ const App = () => {
   const lenisRef = useRef(null);
   const publicIpFetchInFlightRef = useRef(false);
   const networkUsageInFlightRef = useRef(false);
+
+  // Start the native move directly from the mouse press. This is important on Wayland,
+  // for frameless windows on platforms whose native window API supports this call.
+  useEffect(() => {
+    // Linux uses a GTK button-press handler so Wayland receives the original event time.
+    if (IS_LINUX_RUNTIME) return undefined;
+    const titlebar = document.querySelector('.titlebar');
+    if (!titlebar) return;
+
+    const handleMouseDown = async (e) => {
+      // Tauri needs the active primary-button press to initiate the native move.
+      if (e.buttons !== 1) return;
+
+      // Don't drag if clicking on buttons or interactive elements
+      const target = e.target;
+      if (target.closest('.titlebar-button, .titlebar-controls, .top-left-controls, button, input, select')) {
+        return;
+      }
+
+      try {
+        const window = getCurrentWindow();
+        await window.startDragging();
+      } catch (err) {
+        console.warn('Window drag failed:', err);
+      }
+    };
+
+    titlebar.addEventListener('mousedown', handleMouseDown);
+    return () => titlebar.removeEventListener('mousedown', handleMouseDown);
+  }, []);
+
+  // Frameless windows have no native resize borders, so expose native resize zones.
+  useEffect(() => {
+    // Tao handles Linux edge resize natively using the GTK event timestamp.
+    if (IS_LINUX_RUNTIME) return undefined;
+    const root = document.querySelector('.window-resize-handles');
+    if (!root) return;
+    const handlePointerDown = async (event) => {
+      if (event.button !== 0) return;
+      const direction = event.target.dataset.resizeDirection;
+      if (!direction) return;
+      try {
+        await getCurrentWindow().startResizeDragging(direction);
+      } catch (err) {
+        console.warn('Window resize failed:', err);
+      }
+    };
+    root.addEventListener('pointerdown', handlePointerDown);
+    return () => root.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
 
   // dnd-kit sensors
   const sensors = useSensors(
@@ -2074,6 +2032,9 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    // Linux grants ICMP access through capabilities; the full app should not ask users to run as admin.
+    if (IS_LINUX_RUNTIME) return;
+
     const shown = localStorage.getItem('adminNoticeShown');
     if (!shown) {
       setAdminModalOpen(true);
@@ -2332,6 +2293,8 @@ const App = () => {
       networkTotalSent: 'Total sent',
       networkAdapters: 'Adapters',
       networkProcesses: 'Active processes',
+      networkProcessCountLabel: 'active apps',
+      networkClearSearch: 'Clear search',
       networkRefresh: 'Refresh',
       networkRefreshing: 'Refreshing...',
       networkNoAdapters: 'No adapter data',
@@ -2350,6 +2313,10 @@ const App = () => {
       networkSortNameDesc: 'Name Z-A',
       networkAppDownloadTitle: 'App download share',
       networkAppDownloadSubtitle: 'Tracked TCP downloads by application',
+      networkLinuxTrafficTitle: 'TCP download history',
+      networkLinuxTrafficSubtitle: 'Received TCP bytes grouped by application',
+      networkLinuxTrafficStatus: 'Waiting for TCP download activity',
+      networkLinuxTrafficNote: 'History accumulates bytes from observed active TCP sockets. Very short connections and UDP traffic may not be counted. The ss tool is required (iproute on Fedora, iproute2 on Debian and openSUSE).',
       networkAppDownloadEmpty: 'No tracked app download data yet',
       networkAppDownloadOther: 'Other apps',
       networkAppDownloadTracked: 'Tracked total',
@@ -2369,7 +2336,7 @@ const App = () => {
       networkShowLessProcesses: 'Show less',
       networkNoProcessMatches: 'No matching processes',
       networkUnavailable: 'Network usage data is not available.',
-      networkLinuxProcessNote: 'Per-process usage is currently available on Windows. Linux shows total adapter traffic in this version.',
+      networkLinuxProcessNote: 'Linux lists processes with open network sockets. Per-process byte totals are not available from Linux adapters.',
       limiterTitle: 'Bandwidth limit',
       limiterSetLimit: 'Set limit',
       limiterEditLimit: 'Edit limit',
@@ -2461,6 +2428,8 @@ const App = () => {
       updateFailed: 'Update check failed',
       updateModalTitle: 'Update available',
       updateModalBody: 'A newer version is available. Download now?',
+      updateLinuxBody: 'A newer version is available. Install updates through your Linux package manager: run “sudo apt update && sudo apt upgrade” for the APT repository, or download the matching RPM package from the release page.',
+      updateLinuxAction: 'View Linux packages',
       updateModalPrereleaseWarning: 'Warning: this is a beta pre-release and is not recommended for normal users.',
       updateModalYes: 'Yes',
       updateModalNo: 'Not now',
@@ -2602,9 +2571,9 @@ const App = () => {
       aboutVersionLabel: 'Version',
       aboutDeveloperLabel: 'Developer',
       aboutContactLabel: 'Contact',
-      aboutDevTitle: 'Web Application Developer',
-      aboutDevLine1: 'This web application was designed and developed by',
-      aboutDevLine2: 'For contact and to see other projects, visit the link below:',
+      aboutDevTitle: 'PulseNet Developer',
+      aboutDevLine1: 'PulseNet is designed and developed by',
+      aboutDevLine2: 'For contact or to explore more projects, visit the GitHub page below:',
       aboutGithubLink: 'View on GitHub',
       dragToReorder: 'Drag to reorder',
       dragPreviewMove: 'Move',
@@ -2626,6 +2595,8 @@ const App = () => {
       networkTotalSent: 'کل ارسال',
       networkAdapters: 'آداپتورها',
       networkProcesses: 'پردازش‌های فعال',
+      networkProcessCountLabel: 'برنامه فعال',
+      networkClearSearch: 'پاک کردن جستجو',
       networkRefresh: 'به‌روزرسانی',
       networkRefreshing: 'در حال به‌روزرسانی...',
       networkNoAdapters: 'داده‌ای از آداپتور وجود ندارد',
@@ -2644,6 +2615,10 @@ const App = () => {
       networkSortNameDesc: 'نام Z-A',
       networkAppDownloadTitle: 'سهم دانلود برنامه‌ها',
       networkAppDownloadSubtitle: 'TCP دانلود ها بر حسب کانکشن',
+      networkLinuxTrafficTitle: 'تاریخچه دانلود TCP',
+      networkLinuxTrafficSubtitle: 'حجم دریافت‌شدهٔ TCP به تفکیک برنامه',
+      networkLinuxTrafficStatus: 'در انتظار ثبت ترافیک TCP',
+      networkLinuxTrafficNote: 'تاریخچه از شمارندهٔ اتصال‌های TCP فعال جمع می‌شود. ممکن است اتصال‌های خیلی کوتاه و ترافیک UDP ثبت نشوند. ابزار ss لازم است (بستهٔ iproute در فدورا و iproute2 در دبیان و openSUSE).',
       networkAppDownloadEmpty: 'هنوز داده‌ای از دانلود برنامه‌ها ثبت نشده است',
       networkAppDownloadOther: 'سایر برنامه‌ها',
       networkAppDownloadTracked: 'مجموع ثبت‌شده',
@@ -2663,7 +2638,7 @@ const App = () => {
       networkShowLessProcesses: 'نمایش کمتر',
       networkNoProcessMatches: 'پردازشی مطابق جستجو پیدا نشد',
       networkUnavailable: 'داده مصرف شبکه در دسترس نیست.',
-      networkLinuxProcessNote: 'مصرف به تفکیک پردازش فعلا روی ویندوز فعال است. در لینوکس، این نسخه ترافیک کلی آداپتورها را نشان می‌دهد.',
+      networkLinuxProcessNote: 'در لینوکس پردازش‌های دارای اتصال شبکه نمایش داده می‌شوند؛ آداپتورها حجم جداگانهٔ هر برنامه را گزارش نمی‌کنند.',
       limiterTitle: 'محدودیت پهنای باند',
       limiterSetLimit: 'اعمال محدودیت',
       limiterEditLimit: 'ویرایش محدودیت',
@@ -2755,6 +2730,8 @@ const App = () => {
       updateFailed: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
       updateModalTitle: '\u0622\u067e\u062f\u06cc\u062a \u062c\u062f\u06cc\u062f',
       updateModalBody: '\u0648\u0631\u0698\u0646 \u062c\u062f\u06cc\u062f\u06cc \u0648\u062c\u0648\u062f \u062f\u0627\u0631\u062f. \u062f\u0627\u0646\u0644\u0648\u062f \u0645\u06cc\u200c\u06a9\u0646\u06cc\u062f\u061f',
+      updateLinuxBody: '\u0646\u0633\u062e\u0647 \u062c\u062f\u06cc\u062f \u0622\u0645\u0627\u062f\u0647 \u0627\u0633\u062a. \u0628\u0631\u0627\u06cc \u0622\u067e\u062f\u06cc\u062a \u0627\u0632 \u0645\u062f\u06cc\u0631 \u0628\u0633\u062a\u0647\u200c\u0647\u0627\u06cc \u0644\u06cc\u0646\u0648\u06a9\u0633 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u06a9\u0646\u06cc\u062f: \u062f\u0631 \u0645\u062e\u0632\u0646 APT \u062f\u0633\u062a\u0648\u0631 \u00ab sudo apt update && sudo apt upgrade \u00bb \u0631\u0627 \u0627\u062c\u0631\u0627 \u06a9\u0646\u06cc\u062f\u061b \u0628\u0631\u0627\u06cc RPM \u0646\u06cc\u0632 \u0628\u0633\u062a\u0647 \u0645\u0646\u0627\u0633\u0628 \u0631\u0627 \u0627\u0632 \u0635\u0641\u062d\u0647 \u0627\u0646\u062a\u0634\u0627\u0631 \u062f\u0627\u0646\u0644\u0648\u062f \u06a9\u0646\u06cc\u062f.',
+      updateLinuxAction: '\u0645\u0634\u0627\u0647\u062f\u0647 \u0628\u0633\u062a\u0647\u200c\u0647\u0627\u06cc \u0644\u06cc\u0646\u0648\u06a9\u0633',
       updateModalPrereleaseWarning: '\u0647\u0634\u062f\u0627\u0631: \u0627\u06cc\u0646 \u0646\u0633\u062e\u0647 \u0628\u062a\u0627 (pre-release) \u0627\u0633\u062a \u0648 \u0628\u0631\u0627\u06cc \u06a9\u0627\u0631\u0628\u0631 \u0639\u0627\u062f\u06cc \u067e\u06cc\u0634\u0646\u0647\u0627\u062f \u0646\u0645\u06cc\u200c\u0634\u0648\u062f.',
       updateModalYes: '\u0628\u0644\u0647',
       updateModalNo: '\u0641\u0639\u0644\u0627 \u0646\u0647',
@@ -2896,9 +2873,9 @@ const App = () => {
       aboutVersionLabel: '\u0648\u0631\u0698\u0646',
       aboutDeveloperLabel: '\u062a\u0648\u0633\u0639\u0647\u200c\u062f\u0647\u0646\u062f\u0647',
       aboutContactLabel: '\u0627\u0631\u062a\u0628\u0627\u0637',
-      aboutDevTitle: '\u062a\u0648\u0633\u0639\u0647\u200c\u062f\u0647\u0646\u062f\u0647 \u0648\u0628 \u0627\u067e\u0644\u06cc\u06a9\u06cc\u0634\u0646',
-      aboutDevLine1: '\u0627\u06cc\u0646 \u0648\u0628 \u0627\u067e\u0644\u06cc\u06a9\u06cc\u0634\u0646 \u062a\u0648\u0633\u0637',
-      aboutDevLine2: '\u0628\u0631\u0627\u06cc \u0627\u0631\u062a\u0628\u0627\u0637 \u0648 \u0645\u0634\u0627\u0647\u062f\u0647 \u067e\u0631\u0648\u0698\u0647\u200c\u0647\u0627\u06cc \u062f\u06cc\u06af\u0631\u060c \u0627\u0632 \u0644\u06cc\u0646\u06a9 \u0632\u06cc\u0631 \u062f\u06cc\u062f\u0646 \u06a9\u0646\u06cc\u062f:',
+      aboutDevTitle: '\u062a\u0648\u0633\u0639\u0647\u200c\u062f\u0647\u0646\u062f\u0647\u0654 PulseNet',
+      aboutDevLine1: '\u0627\u06cc\u0646 \u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627',
+      aboutDevLine2: '\u0628\u0631\u0627\u06cc \u0627\u0631\u062a\u0628\u0627\u0637 \u06cc\u0627 \u062f\u06cc\u062f\u0646 \u067e\u0631\u0648\u0698\u0647\u200c\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631، \u0628\u0647 \u0635\u0641\u062d\u0647\u0654 GitHub \u0632\u06cc\u0631 \u0633\u0631 \u0628\u0632\u0646\u06cc\u062f:',
       aboutGithubLink: '\u0645\u0634\u0627\u0647\u062f\u0647 \u062f\u0631 GitHub',
       dragToReorder: '\u062c\u0627\u0628\u062c\u0627\u06cc\u06cc \u0628\u0631\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u062a\u0631\u062a\u06cc\u0628',
       dragPreviewMove: '\u062c\u0627\u0628\u062c\u0627\u06cc\u06cc',
@@ -3057,14 +3034,14 @@ const App = () => {
 
   const statusTexts = useMemo(() => {
     const en = {
-      needAdmin: 'Need Admin',
+      needAdmin: IS_LINUX_RUNTIME ? 'ICMP Permission' : 'Need Admin',
       error: 'Error',
       noResponse: 'No Response',
       ipcError: 'IPC Error',
       paused: 'Paused',
     };
     const fa = {
-      needAdmin: '\u0646\u06cc\u0627\u0632 \u0628\u0647 \u062f\u0633\u062a\u0631\u0633\u06cc \u0627\u062f\u0645\u06cc\u0646',
+      needAdmin: IS_LINUX_RUNTIME ? '\u0645\u062c\u0648\u0632 ICMP' : '\u0646\u06cc\u0627\u0632 \u0628\u0647 \u062f\u0633\u062a\u0631\u0633\u06cc \u0627\u062f\u0645\u06cc\u0646',
       error: '\u062e\u0637\u0627',
       noResponse: '\u0628\u062f\u0648\u0646 \u067e\u0627\u0633\u062e',
       ipcError: '\u062e\u0637\u0627\u06cc IPC',
@@ -3183,20 +3160,10 @@ const App = () => {
         downloadBytes: otherDownloadBytes,
       });
     }
-    let applicationOffset = 0;
-    const applicationUsage = primaryApplications.map((application, index) => {
-      const share = applicationDownloadTotal
-        ? application.downloadBytes / applicationDownloadTotal
-        : 0;
-      const result = {
-        ...application,
-        share,
-        offset: applicationOffset,
-        color: NETWORK_DOWNLOAD_CHART_COLORS[index % NETWORK_DOWNLOAD_CHART_COLORS.length],
-      };
-      applicationOffset += share;
-      return result;
-    });
+    const applicationUsage = buildNetworkDownloadSegments(primaryApplications).map((application, index) => ({
+      ...application,
+      color: NETWORK_DOWNLOAD_CHART_COLORS[index % NETWORK_DOWNLOAD_CHART_COLORS.length],
+    }));
 
     const processMap = new Map();
     for (const process of current.processes || []) {
@@ -3271,8 +3238,7 @@ const App = () => {
         };
       })
       .filter((process) => !query || process.searchText.includes(query))
-      .sort((left, right) => compareNetworkProcesses(networkProcessSort, left, right))
-      .slice(0, 24);
+      .sort((left, right) => compareNetworkProcesses(networkProcessSort, left, right));
 
     const processGroups = [
       {
@@ -3296,7 +3262,7 @@ const App = () => {
       adapters,
       maxAdapterRate: adapters.reduce((max, adapter) => Math.max(max, Number(adapter.downloadRate || 0) + Number(adapter.uploadRate || 0)), 0),
       activeAdapters: adapters.filter((adapter) => (Number(adapter.downloadRate || 0) + Number(adapter.uploadRate || 0)) > 0).length,
-      activeProcesses: (current.processes || []).filter((process) => Number(process.connections || 0) > 0).length,
+      activeProcesses: displayProcesses.filter((process) => Number(process.connections || 0) > 0).length,
       processes: displayProcesses,
       processGroups,
       applicationUsage,
@@ -3693,8 +3659,8 @@ const App = () => {
           </div>
         </div>
       </aside>
-      <div className="titlebar" data-tauri-drag-region>
-        <div className="titlebar-left" data-tauri-drag-region>
+      <div className="titlebar">
+        <div className="titlebar-left">
           <img src={iconIco} alt="PulseNet" className="app-icon" />
           <div className="titlebar-title">PulseNet</div>
         </div>
@@ -3710,6 +3676,11 @@ const App = () => {
           </button>
           <button type="button" className="titlebar-button close" id="close-button" aria-label="Close">&#x2715;</button>
         </div>
+      </div>
+      <div className="window-resize-handles" aria-hidden="true">
+        {['North', 'NorthEast', 'East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest'].map((direction) => (
+          <div key={direction} className={`window-resize-handle ${direction.replace(/([A-Z])/g, '-$1').toLowerCase().slice(1)}`} data-resize-direction={direction} />
+        ))}
       </div>
       <div
         className={`container scrollbar ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}
@@ -4357,11 +4328,11 @@ const App = () => {
                 <div className="network-throughput-head">
                   <div>
                     <span>{texts.networkDownloadLive}</span>
-                    <strong>{formatByteRate(networkUsageStats.downloadRate)}</strong>
+                    <AnimatedRate value={networkUsageStats.downloadRate} />
                   </div>
                   <div>
                     <span>{texts.networkUploadLive}</span>
-                    <strong>{formatByteRate(networkUsageStats.uploadRate)}</strong>
+                    <AnimatedRate value={networkUsageStats.uploadRate} />
                   </div>
                 </div>
                 <div className="network-throughput-rail" aria-hidden="true">
@@ -4435,8 +4406,8 @@ const App = () => {
                 >
                   <div className="network-download-chart-head">
                     <div>
-                      <strong>{texts.networkAppDownloadTitle}</strong>
-                      <span>{texts.networkAppDownloadSubtitle}</span>
+                      <strong>{IS_LINUX_RUNTIME ? texts.networkLinuxTrafficTitle : texts.networkAppDownloadTitle}</strong>
+                      <span>{IS_LINUX_RUNTIME ? texts.networkLinuxTrafficSubtitle : texts.networkAppDownloadSubtitle}</span>
                     </div>
                     <div className="network-download-chart-actions">
                       <em title={texts.networkAppDownloadTracked}>
@@ -4454,7 +4425,15 @@ const App = () => {
                       </button>
                     </div>
                   </div>
-                  {networkUsageStats.applicationUsage.length === 0 ? (
+                  {IS_LINUX_RUNTIME && networkUsageStats.applicationUsage.length === 0 ? (
+                    <div className="network-linux-traffic-note">
+                      <span className="network-linux-traffic-icon" aria-hidden="true">↕</span>
+                      <div>
+                        <strong>{texts.networkLinuxTrafficStatus}</strong>
+                        <span>{texts.networkLinuxTrafficNote}</span>
+                      </div>
+                    </div>
+                  ) : networkUsageStats.applicationUsage.length === 0 ? (
                     <div className="network-download-chart-empty">
                       <span className="network-download-empty-ring" aria-hidden="true"></span>
                       <span>{texts.networkAppDownloadEmpty}</span>
@@ -4463,26 +4442,18 @@ const App = () => {
                     <div className="network-download-chart-layout">
                       <div className="network-download-donut">
                         <svg viewBox="0 0 120 120" role="img" aria-label={texts.networkAppDownloadTitle}>
-                          <circle className="network-download-donut-track" cx="60" cy="60" r="46" />
+                          <circle className="network-download-donut-track" cx="60" cy="60" r="42" />
                           {networkUsageStats.applicationUsage.map((application) => {
-                            const segmentLength = Math.max(
-                              0,
-                              application.share * NETWORK_DOWNLOAD_CHART_CIRCUMFERENCE - 2.5
-                            );
                             return (
-                              <circle
+                              <path
                                 key={`download-segment-${application.id}`}
                                 className={`network-download-donut-segment ${highlightedNetworkApplication?.id === application.id ? 'active' : ''}`}
-                                cx="60"
-                                cy="60"
-                                r="46"
+                                d={application.path}
                                 stroke={application.color}
-                                strokeDasharray={`${segmentLength} ${NETWORK_DOWNLOAD_CHART_CIRCUMFERENCE - segmentLength}`}
-                                strokeDashoffset={-application.offset * NETWORK_DOWNLOAD_CHART_CIRCUMFERENCE}
-                                onMouseEnter={() => setHoveredNetworkApplicationId(application.id)}
+                                fill={application.color}
                               >
                                 <title>{`${application.name}: ${formatBytes(application.downloadBytes)} (${Math.round(application.share * 100)}%)`}</title>
-                              </circle>
+                              </path>
                             );
                           })}
                         </svg>
@@ -4529,8 +4500,11 @@ const App = () => {
 
               <div className="network-panel network-process-panel">
                 <div className="network-panel-head">
-                  <div className="network-panel-title">{texts.networkProcesses}</div>
-                  <span>{networkUsageStats.processes.length}</span>
+                  <div className="network-process-heading">
+                    <div className="network-panel-title">{texts.networkProcesses}</div>
+                    <span>{networkUsageStats.activeProcesses} {texts.networkProcessCountLabel}</span>
+                  </div>
+                  <span className="network-process-total" title={texts.networkProcesses}>{networkUsageStats.processes.length}</span>
                 </div>
                 <div className={`limiter-engine-status ${bandwidthLimiterState.engine?.ready ? 'ready' : 'pending'}`}>
                   <span className="limiter-engine-dot" aria-hidden="true"></span>
@@ -4552,13 +4526,26 @@ const App = () => {
                   <div className="limiter-inline-feedback">{bandwidthLimitFeedback}</div>
                 )}
                 <div className="network-process-tools">
-                  <input
-                    type="search"
-                    value={networkProcessSearch}
-                    onChange={(event) => setNetworkProcessSearch(event.target.value)}
-                    placeholder={texts.networkSearchProcesses}
-                    className="network-process-search"
-                  />
+                  <div className="network-process-search-wrap">
+                    <span className="network-process-search-icon" aria-hidden="true">⌕</span>
+                    <input
+                      type="search"
+                      value={networkProcessSearch}
+                      onChange={(event) => setNetworkProcessSearch(event.target.value)}
+                      placeholder={texts.networkSearchProcesses}
+                      aria-label={texts.networkSearchProcesses}
+                      className="network-process-search"
+                    />
+                    {networkProcessSearch && (
+                      <button
+                        type="button"
+                        className="network-process-search-clear"
+                        aria-label={texts.networkClearSearch}
+                        title={texts.networkClearSearch}
+                        onClick={() => setNetworkProcessSearch('')}
+                      >×</button>
+                    )}
+                  </div>
                   <AppDropdown
                     value={networkProcessSort}
                     onChange={setNetworkProcessSort}
@@ -4810,7 +4797,10 @@ const App = () => {
                 <div className="about-hero-copy">
                   <div className="about-kicker">PulseNet</div>
                   <h2>{texts.aboutDevTitle}</h2>
-                  <p>{texts.aboutDevLine1} <strong>Arash Bayat</strong>.</p>
+                  <p>
+                    {texts.aboutDevLine1} <strong>Arash Bayat</strong>
+                    {isPersian ? ' \u0637\u0631\u0627\u062d\u06cc \u0648 \u062a\u0648\u0633\u0639\u0647 \u062f\u0627\u062f\u0647 \u0627\u0633\u062a.' : '.'}
+                  </p>
                 </div>
               </div>
               <div className="about-info-grid">
@@ -5005,7 +4995,7 @@ const App = () => {
                 <div className="update-modal-card">
                   <div className="update-modal-title">{texts.updateModalTitle}</div>
                   <div className="update-modal-body">
-                    {texts.updateModalBody}
+                    {IS_LINUX_RUNTIME ? texts.updateLinuxBody : texts.updateModalBody}
                     {updateInfo && updateInfo.latestVersion ? ` (${updateInfo.latestVersion})` : ''}
                     {updateInfo && updateInfo.isPrerelease ? (
                       <div className="update-modal-warning">{texts.updateModalPrereleaseWarning}</div>
@@ -5013,7 +5003,7 @@ const App = () => {
                   </div>
                   <div className="update-modal-actions">
                     <button className="update-modal-button primary" onClick={handleUpdateDownload}>
-                      {texts.updateModalYes}
+                      {IS_LINUX_RUNTIME ? texts.updateLinuxAction : texts.updateModalYes}
                     </button>
                     <button className="update-modal-button" onClick={handleUpdateDismiss}>
                       {texts.updateModalNo}

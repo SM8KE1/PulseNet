@@ -16,7 +16,11 @@ if (process.platform === 'win32') {
 }
 
 const tauriArguments = ['node_modules/@tauri-apps/cli/tauri.js', 'build'];
+if (process.platform === 'linux') {
+  tauriArguments.push('--bundles', 'deb,rpm');
+}
 if (process.platform === 'win32') {
+  tauriArguments.push('--bundles', 'nsis,msi');
   tauriArguments.push('--config', JSON.stringify({
     bundle: {
       externalBin: ['../native/windows-firewall/out/Build/Release/PulseNetNetworkControl'],

@@ -1,4 +1,4 @@
-name: Linux Build
+name: Build and Release
 
 on:
   workflow_dispatch:
@@ -7,10 +7,6 @@ on:
       - main
     tags:
       - "v*"
-  release:
-    types:
-      - created
-
 permissions:
   contents: write
 
@@ -20,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Install Linux dependencies
         run: |
@@ -33,11 +29,12 @@ jobs:
             librsvg2-dev \
             libssl-dev \
             libwebkit2gtk-4.1-dev \
+            iproute2 \
             nftables \
             wget
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -48,52 +45,226 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Refresh Rust dependency lockfile
-        working-directory: src-tauri
-        run: cargo update
-
       - name: Build Linux bundles
         run: npm run build
 
-      - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: pulsenet-linux-appimage
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
-          if-no-files-found: error
+      - name: Verify Debian package integration
+        run: |
+          sudo apt-get install -y ./src-tauri/target/release/bundle/deb/*.deb
+          test -x /usr/bin/pulsenet
+          test -f /usr/share/applications/PulseNet.desktop
+          test -f /usr/share/icons/hicolor/128x128/apps/pulsenet.png
+          getcap /usr/bin/pulsenet | grep -q cap_net_raw
+          systemctl is-enabled pulsenet-network-control.service
+          package_name="$(dpkg-deb -f src-tauri/target/release/bundle/deb/*.deb Package)"
+          sudo apt-get remove -y "$package_name"
 
       - name: Upload Debian artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: pulsenet-linux-deb
           path: src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
 
       - name: Upload RPM artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: pulsenet-linux-rpm
           path: src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
 
-      - name: Upload Arch packaging
-        uses: actions/upload-artifact@v5
-        with:
-          name: pulsenet-linux-arch-packaging
-          path: packaging/arch/**
-          if-no-files-found: error
-
-      - name: Package Arch files for release
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
-        run: tar -czf pulsenet-linux-arch-packaging.tar.gz -C packaging arch
-
       - name: Attach bundles to GitHub release
-        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body: "."
+          generate_release_notes: false
           files: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
-            pulsenet-linux-arch-packaging.tar.gz
+
+  publish-apt-repository:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install APT repository tools
+        run: sudo apt-get update && sudo apt-get install -y apt-utils dpkg-dev gnupg
+
+      - name: Download Debian package
+        uses: actions/download-artifact@v7
+        with:
+          name: pulsenet-linux-deb
+          path: debs
+
+      - name: Build signed APT repository
+        env:
+          APT_REPO_SIGNING_KEY: ${{ secrets.APT_REPO_SIGNING_KEY }}
+          APT_REPO_PUBLIC_KEY: ${{ secrets.APT_REPO_PUBLIC_KEY }}
+          APT_REPO_SIGNING_KEY_PASSPHRASE: ${{ secrets.APT_REPO_SIGNING_KEY_PASSPHRASE }}
+        run: ./scripts/build-apt-repository.sh debs site/apt
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  verify-rpm-package:
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    permissions:
+      contents: read
+    steps:
+      - name: Install RPM package tools
+        run: dnf install -y iproute libcap nftables rpm systemd
+
+      - name: Download RPM package
+        uses: actions/download-artifact@v7
+        with:
+          name: pulsenet-linux-rpm
+          path: rpms
+
+      - name: Verify RPM install and removal
+        run: |
+          package="$(find rpms -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+          test -n "$package"
+          rpm -Uvh --nodeps "$package"
+          test -x /usr/bin/pulsenet
+          test -f /usr/share/applications/PulseNet.desktop
+          test -f /usr/share/icons/hicolor/128x128/apps/pulsenet.png
+          getcap /usr/bin/pulsenet | grep -q cap_net_raw
+          test -f /etc/systemd/system/pulsenet-network-control.service
+          package_name="$(rpm -qp --qf '%{NAME}' "$package")"
+          rpm -e "$package_name"
+          test ! -e /etc/systemd/system/pulsenet-network-control.service
+
+  verify-opensuse-rpm-package:
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    container: opensuse/tumbleweed
+    permissions:
+      contents: read
+    steps:
+      - name: Install RPM package tools
+        run: zypper --non-interactive install iproute2 rpm libcap-progs nftables systemd
+
+      - name: Download RPM package
+        uses: actions/download-artifact@v7
+        with:
+          name: pulsenet-linux-rpm
+          path: rpms
+
+      - name: Verify openSUSE install and removal
+        run: |
+          package="$(find rpms -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+          test -n "$package"
+          rpm -Uvh --nodeps "$package"
+          test -x /usr/bin/pulsenet
+          test -f /usr/share/applications/PulseNet.desktop
+          getcap /usr/bin/pulsenet | grep -q cap_net_raw
+          grep -q 'CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_OVERRIDE' /etc/systemd/system/pulsenet-network-control.service
+          package_name="$(rpm -qp --qf '%{NAME}' "$package")"
+          rpm -e "$package_name"
+          test ! -e /etc/systemd/system/pulsenet-network-control.service
+
+  verify-debian-13-package:
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    container: debian:trixie
+    permissions:
+      contents: read
+    steps:
+      - name: Install Debian package tools
+        run: apt-get update && apt-get install -y ca-certificates curl libcap2-bin nftables systemd
+
+      - name: Download Debian package
+        uses: actions/download-artifact@v7
+        with:
+          name: pulsenet-linux-deb
+          path: debs
+
+      - name: Verify Debian 13 install and removal
+        run: |
+          package="$(find debs -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$package"
+          apt-get install -y "./$package"
+          test -x /usr/bin/pulsenet
+          test -f /usr/share/applications/PulseNet.desktop
+          getcap /usr/bin/pulsenet | grep -q cap_net_raw
+          test -f /etc/systemd/system/pulsenet-network-control.service
+          package_name="$(dpkg-deb -f "$package" Package)"
+          apt-get remove -y "$package_name"
+          test ! -e /etc/systemd/system/pulsenet-network-control.service
+
+  build-windows:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-linux
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run UI tests
+        run: npm run test:ui
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+      - name: Build Windows bundles
+        run: npm run build
+
+      - name: Test MSI and NSIS cross-upgrades
+        shell: powershell
+        run: |
+          ./scripts/test-windows-installer-migration.ps1 `
+            -CurrentMsi (Get-Item 'src-tauri/target/release/bundle/msi/*.msi').FullName `
+            -CurrentNsis (Get-Item 'src-tauri/target/release/bundle/nsis/*-setup.exe').FullName
+
+      - name: Upload NSIS artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pulsenet-windows-nsis
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pulsenet-windows-msi
+          path: src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+      - name: Attach bundles to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/msi/*.msi
