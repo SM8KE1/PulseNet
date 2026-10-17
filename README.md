@@ -25,6 +25,14 @@ It provides ping monitoring, DNS testing and management, speed testing, logs, an
 - Sidebar donation shortcut for `https://daramet.com/SM0KE`
 - Per-application network control: Windows Firewall block/unblock and Linux cgroup/nftables block/rate rules
 
+## Version 2.0.2
+
+- Added full support for Ubuntu 24.04 and newer.
+- Fixed bugs and improved overall application performance.
+- Added per-application internet access restrictions.
+- Added real-time download and upload speed monitoring for total network traffic and individual applications.
+- Added per-application data usage monitoring.
+
 ## Version 2.0.0
 
 - Refreshed DNS, Speed Test, Log, Settings, Ping, and About screens
