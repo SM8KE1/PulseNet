@@ -4,7 +4,11 @@ All notable PulseNet changes are documented in this file.
 
 ## 2.0.2
 
-.
+- Added full support for Ubuntu 24.04 and newer.
+- Fixed bugs and improved overall application performance.
+- Added per-application internet access restrictions.
+- Added real-time download and upload speed monitoring for total network traffic and individual applications.
+- Added per-application data usage monitoring.
 
 ## 2.0.0 - 2026-08-10
 
