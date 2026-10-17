@@ -30,8 +30,8 @@ It provides ping monitoring, DNS testing and management, speed testing, logs, an
 - Added full support for Ubuntu 24.04 and newer.
 - Fixed bugs and improved overall application performance.
 - Added per-application internet access restrictions.
-- Added real-time download and upload speed monitoring for total network traffic and individual applications.
-- Added per-application data usage monitoring.
+- Added real-time download and upload rate monitoring for total network traffic.
+- Added per-application download usage tracking.
 
 ## Version 2.0.0
 
