@@ -65,7 +65,7 @@ sudo apt install pulse-net
 rm pulsenet-archive-keyring.gpg
 ```
 
-Alternatively, download the `.deb` package above and install it with `sudo apt install ./PulseNet_2.0.2_amd64.deb`.
+To update an existing APT installation, run `sudo apt update && sudo apt install --only-upgrade pulse-net`. If you installed from a downloaded `.deb`, install the newer file with `sudo apt install ./PulseNet_2.0.2_amd64.deb`; this upgrades the existing package without uninstalling it first.
 
 ### Fedora / openSUSE
 

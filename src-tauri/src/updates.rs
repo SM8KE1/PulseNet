@@ -1,5 +1,6 @@
 use reqwest::Client as HttpClient;
 use serde::Serialize;
+use std::time::Duration;
 
 const GITHUB_REPO: &str = "SM8KE1/PulseNet";
 const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/SM8KE1/PulseNet/releases/latest";
@@ -51,9 +52,24 @@ fn release_url() -> String {
 
 #[tauri::command]
 pub(crate) async fn check_for_updates(include_prerelease: Option<bool>) -> UpdateCheckResult {
-    let client = HttpClient::new();
     let include_prerelease = include_prerelease.unwrap_or(false);
     let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let client = match HttpClient::builder()
+        .timeout(Duration::from_secs(12))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => {
+            return UpdateCheckResult {
+                current_version,
+                latest_version: String::new(),
+                update_available: false,
+                is_prerelease: false,
+                url: release_url(),
+                error: Some("update-check-failed".to_string()),
+            };
+        }
+    };
     let response = client
         .get(if include_prerelease {
             GITHUB_RELEASES_LIST_URL
@@ -73,6 +89,16 @@ pub(crate) async fn check_for_updates(include_prerelease: Option<bool>) -> Updat
             error: Some("update-check-failed".to_string()),
         };
     };
+    if !response.status().is_success() {
+        return UpdateCheckResult {
+            current_version,
+            latest_version: String::new(),
+            update_available: false,
+            is_prerelease: false,
+            url: release_url(),
+            error: Some("update-service-unavailable".to_string()),
+        };
+    }
     let Ok(data) = response.json::<serde_json::Value>().await else {
         return UpdateCheckResult {
             current_version,
@@ -104,6 +130,16 @@ pub(crate) async fn check_for_updates(include_prerelease: Option<bool>) -> Updat
         .unwrap_or("")
         .trim_start_matches('v')
         .to_string();
+    if latest.is_empty() {
+        return UpdateCheckResult {
+            current_version,
+            latest_version: String::new(),
+            update_available: false,
+            is_prerelease: false,
+            url: release_url(),
+            error: Some("invalid-response".to_string()),
+        };
+    }
     let is_prerelease = release
         .get("prerelease")
         .and_then(|value| value.as_bool())
