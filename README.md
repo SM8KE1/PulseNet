@@ -45,11 +45,51 @@ It provides ping monitoring, DNS testing and management, speed testing, logs, an
 - Fixed dev server path to use `http://127.0.0.1:5173`
 - Windows bundles are available as NSIS setup and MSI installer
 
+## 📥 Direct Download
+
+<div align="left">
+<table>
+  <thead align="left">
+    <tr>
+      <th>OS</th>
+      <th>Download</th>
+    </tr>
+  </thead>
+  <tbody align="left">
+    <tr>
+      <td>Windows</td>
+      <td>
+        <a href="https://github.com/SM8KE1/PulseNet/releases/latest/download/PulseNet_2.0.2_x64-setup.exe"><img src="https://img.shields.io/badge/Setup-x64-0078D7.svg?logo=windows" alt="Windows x64 Setup"></a><br>
+        <a href="https://github.com/SM8KE1/PulseNet/releases/latest/download/PulseNet_2.0.2_x64_en-US.msi"><img src="https://img.shields.io/badge/MSI-x64-2D7D9A.svg?logo=windows" alt="Windows x64 MSI"></a>
+      </td>
+    </tr>
+    <tr>
+      <td>Ubuntu / Debian</td>
+      <td>
+        <a href="https://github.com/SM8KE1/PulseNet/releases/latest/download/PulseNet_2.0.2_amd64.deb"><img src="https://img.shields.io/badge/DEB-amd64-A81D33.svg?logo=debian" alt="Linux amd64 DEB"></a><br>
+        <a href="https://sm8ke1.github.io/PulseNet/apt/"><img src="https://img.shields.io/badge/APT-Repository-E95420.svg?logo=ubuntu" alt="PulseNet APT repository"></a>
+      </td>
+    </tr>
+    <tr>
+      <td>Fedora / openSUSE</td>
+      <td>
+        <a href="https://github.com/SM8KE1/PulseNet/releases/latest/download/PulseNet-2.0.2-1.x86_64.rpm"><img src="https://img.shields.io/badge/RPM-x86__64-EE0000.svg?logo=redhat" alt="Linux x86_64 RPM"></a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+## ⚙️ Installation and tutorials
+
+- [Windows installation](#install-windows)
+- [Ubuntu and Debian installation](#install-linux)
+- [Fedora and openSUSE installation](#install-linux)
+- [All releases and release notes](https://github.com/SM8KE1/PulseNet/releases)
+
 ## Install (Windows)
 
-1. Download latest installer from:
-   - `https://github.com/SM8KE1/PulseNet/releases`
-2. Run setup and finish installation.
+Download and run the **Setup** installer above. The MSI package is also available for managed deployments.
 
 ## Install (Linux)
 
