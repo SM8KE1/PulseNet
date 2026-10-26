@@ -33,17 +33,6 @@ fi
 
 rm -rf "$output_directory"
 mkdir -p "$pages_directory"
-cat > "$pages_directory/index.html" <<'EOF'
-<!doctype html>
-<html lang="en">
-  <head><meta charset="utf-8"><title>PulseNet APT Repository</title></head>
-  <body>
-    <h1>PulseNet APT Repository</h1>
-    <p>Signed APT packages for 64-bit Ubuntu and Debian systems.</p>
-    <p>Installation instructions are available in the <a href="https://github.com/SM8KE1/PulseNet#install-from-the-apt-repository">PulseNet README</a>.</p>
-  </body>
-</html>
-EOF
 pool_directory="$output_directory/pool/main/p/pulsenet"
 distribution_directory="$output_directory/dists/stable/main/binary-amd64"
 mkdir -p "$pool_directory" "$distribution_directory"
