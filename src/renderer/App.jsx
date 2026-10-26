@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 56807)
-Total output lines: 5229
-
 import React, { memo, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Lenis from 'lenis';
@@ -724,7 +721,3989 @@ const App = () => {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved ? saved === 'true' : true;
   });
-  const [isWindowMaximize…44807 tokens truncated…  type="button"
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [currentPage, setCurrentPage] = useState('ping');
+  const [pingIntervalMs, setPingIntervalMs] = useState(() => {
+    const saved = localStorage.getItem('pingIntervalMs');
+    return saved ? Number(saved) : 2000;
+  });
+  const [activeProfile, setActiveProfile] = useState(() => localStorage.getItem('activeProfile') || 'custom');
+  const [compactMode, setCompactMode] = useState(() => localStorage.getItem('compactMode') === 'true');
+  const [optimizationEnabled, setOptimizationEnabled] = useState(() => {
+    const saved = localStorage.getItem('optimizationEnabled');
+    return saved === 'true';
+  });
+  const [autoLaunch, setAutoLaunch] = useState(true);
+  const [closeAction, setCloseAction] = useState(() => {
+    const saved = localStorage.getItem('closeAction');
+    return saved || 'ask';
+  });
+  const [speedStarted, setSpeedStarted] = useState(false);
+  const [speedMetrics, setSpeedMetrics] = useState(null);
+  const [speedLoading, setSpeedLoading] = useState(false);
+  const [speedPhase, setSpeedPhase] = useState('idle');
+  const [speedProvider, setSpeedProvider] = useState(() => localStorage.getItem('speedProvider') || 'cloudflare');
+  const [networkSnapshot, setNetworkSnapshot] = useState(null);
+  const [previousNetworkSnapshot, setPreviousNetworkSnapshot] = useState(null);
+  const [networkLoading, setNetworkLoading] = useState(false);
+  const [networkUsageResetting, setNetworkUsageResetting] = useState(false);
+  const [networkError, setNetworkError] = useState('');
+  const [networkProcessSearch, setNetworkProcessSearch] = useState('');
+  const [hoveredNetworkApplicationId, setHoveredNetworkApplicationId] = useState('');
+  const [networkProcessSort, setNetworkProcessSort] = useState(() => (
+    localStorage.getItem('networkProcessSort') || 'connections-desc'
+  ));
+  const [showAllNetworkProcesses, setShowAllNetworkProcesses] = useState(false);
+  const [expandedNetworkProcesses, setExpandedNetworkProcesses] = useState({});
+  const [bandwidthLimiterState, setBandwidthLimiterState] = useState({ engine: null, rules: [] });
+  const [bandwidthLimitModalProcess, setBandwidthLimitModalProcess] = useState(null);
+  const [bandwidthLimitForm, setBandwidthLimitForm] = useState({ download: '', upload: '', unit: 'mbps', blocked: false });
+  const [bandwidthLimitSaving, setBandwidthLimitSaving] = useState(false);
+  const [bandwidthLimitFeedback, setBandwidthLimitFeedback] = useState('');
+  const [publicNetworkInfo, setPublicNetworkInfo] = useState({
+    ip: 'N/A',
+    country: 'N/A',
+  });
+  const [isPublicIpLoading, setIsPublicIpLoading] = useState(false);
+  const [showPublicIp, setShowPublicIp] = useState(() => {
+    const saved = localStorage.getItem('showPublicIp');
+    return saved ? saved === 'true' : true;
+  });
+  const [betaUpdates, setBetaUpdates] = useState(() => {
+    const saved = localStorage.getItem('betaUpdates');
+    return saved === 'true';
+  });
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState(() => {
+    const saved = localStorage.getItem('autoCheckUpdates');
+    return saved ? saved === 'true' : true;
+  });
+  const speedRequestRef = useRef({ id: 0 });
+  const speedPhaseTimersRef = useRef([]);
+  const [dnsDomain, setDnsDomain] = useState('');
+  const [dnsResults, setDnsResults] = useState([]);
+  const [dnsLoading, setDnsLoading] = useState(false);
+  const [dnsError, setDnsError] = useState('');
+  const [dnsSearch, setDnsSearch] = useState('');
+  const [dnsStatusFilter, setDnsStatusFilter] = useState('all');
+  const [dnsSortKey, setDnsSortKey] = useState('latency-asc');
+  const [dnsToolMode, setDnsToolMode] = useState('test');
+  const [dnsBenchmarkLoading, setDnsBenchmarkLoading] = useState(false);
+  const [dnsBenchmarkStats, setDnsBenchmarkStats] = useState([]);
+  const [dnsBenchmarkRounds, setDnsBenchmarkRounds] = useState(() => {
+    const saved = localStorage.getItem('dnsBenchmarkRounds');
+    const value = saved ? Number(saved) : 3;
+    return Number.isFinite(value) && value > 0 ? Math.min(value, 10) : 3;
+  });
+  const [customDnsInput, setCustomDnsInput] = useState('');
+  const [customDnsServers, setCustomDnsServers] = useState(() => {
+    const stored = localStorage.getItem('customDnsServers');
+    if (!stored) return [];
+    try {
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed.map((value) => String(value).trim()).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [batchDomainsInput, setBatchDomainsInput] = useState(() => {
+    return localStorage.getItem('dnsBatchDomainsInput') || '';
+  });
+  const [batchResults, setBatchResults] = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [dnsAdapters, setDnsAdapters] = useState([]);
+  const [dnsManagerLoading, setDnsManagerLoading] = useState(false);
+  const [dnsSelectedAdapter, setDnsSelectedAdapter] = useState('');
+  const [dnsPrimaryInput, setDnsPrimaryInput] = useState('');
+  const [dnsSecondaryInput, setDnsSecondaryInput] = useState('');
+  const [dnsManagerStatus, setDnsManagerStatus] = useState('');
+  const [lastDnsBackup, setLastDnsBackup] = useState(() => {
+    const stored = localStorage.getItem('lastDnsBackup');
+    if (!stored) return null;
+    try {
+      return JSON.parse(stored);
+    } catch {
+      return null;
+    }
+  });
+  const [updateStatus, setUpdateStatus] = useState('');
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [closeRememberChoice, setCloseRememberChoice] = useState(false);
+  const [adminModalOpen, setAdminModalOpen] = useState(false);
+  const [firstRunOpen, setFirstRunOpen] = useState(() => localStorage.getItem('firstRunSetupDone') !== 'true');
+  const scrollRef = useRef(null);
+  const [isPersian, setIsPersian] = useState(() => {
+    const savedLocale = localStorage.getItem('locale');
+    return savedLocale ? savedLocale === 'fa' : false;
+  });
+  const { allHosts, setAllHosts, addHost } = useHosts();
+  const [editingHost, setEditingHost] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [logEntries, setLogEntries] = useState(() => {
+    const stored = localStorage.getItem('logEntries');
+    if (!stored) return [];
+    try {
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+  const [logFilter, setLogFilter] = useState('all');
+  const [logSearch, setLogSearch] = useState('');
+  const [logDateFilter, setLogDateFilter] = useState('all');
+  const logAlertCooldownRef = useRef({});
+  const copyTimerRef = useRef(0);
+  const importSettingsInputRef = useRef(null);
+  const [copyFeedbackKey, setCopyFeedbackKey] = useState('');
+  const [activeDragId, setActiveDragId] = useState(null);
+  const [showDonateNudge, setShowDonateNudge] = useState(false);
+  const lastOverIdRef = useRef(null);
+  const lenisRef = useRef(null);
+  const publicIpFetchInFlightRef = useRef(false);
+  const networkUsageInFlightRef = useRef(false);
+
+  // Start the native move directly from the mouse press. This is important on Wayland,
+  // for frameless windows on platforms whose native window API supports this call.
+  useEffect(() => {
+    // Linux uses a GTK button-press handler so Wayland receives the original event time.
+    if (IS_LINUX_RUNTIME) return undefined;
+    const titlebar = document.querySelector('.titlebar');
+    if (!titlebar) return;
+
+    const handleMouseDown = async (e) => {
+      // Tauri needs the active primary-button press to initiate the native move.
+      if (e.buttons !== 1) return;
+
+      // Don't drag if clicking on buttons or interactive elements
+      const target = e.target;
+      if (target.closest('.titlebar-button, .titlebar-controls, .top-left-controls, button, input, select')) {
+        return;
+      }
+
+      try {
+        const window = getCurrentWindow();
+        await window.startDragging();
+      } catch (err) {
+        console.warn('Window drag failed:', err);
+      }
+    };
+
+    titlebar.addEventListener('mousedown', handleMouseDown);
+    return () => titlebar.removeEventListener('mousedown', handleMouseDown);
+  }, []);
+
+  // Frameless windows have no native resize borders, so expose native resize zones.
+  useEffect(() => {
+    // Tao handles Linux edge resize natively using the GTK event timestamp.
+    if (IS_LINUX_RUNTIME) return undefined;
+    const root = document.querySelector('.window-resize-handles');
+    if (!root) return;
+    const handlePointerDown = async (event) => {
+      if (event.button !== 0) return;
+      const direction = event.target.dataset.resizeDirection;
+      if (!direction) return;
+      try {
+        await getCurrentWindow().startResizeDragging(direction);
+      } catch (err) {
+        console.warn('Window resize failed:', err);
+      }
+    };
+    root.addEventListener('pointerdown', handlePointerDown);
+    return () => root.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  // dnd-kit sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  useEffect(() => {
+    const donateNudgeTimer = window.setTimeout(() => {
+      setShowDonateNudge(true);
+    }, DONATE_NUDGE_DELAY_MS);
+
+    return () => window.clearTimeout(donateNudgeTimer);
+  }, []);
+
+  const handleDonateClick = useCallback(() => {
+    setShowDonateNudge(false);
+    openUrl('https://daramet.com/SM0KE');
+  }, []);
+
+  const toggleTheme = () => {
+    setDarkMode(prevMode => !prevMode);
+  };
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(prev => !prev);
+  };
+
+  const toggleLocale = () => {
+    setIsPersian(prev => {
+      const next = !prev;
+      localStorage.setItem('locale', next ? 'fa' : 'en');
+      return next;
+    });
+  };
+
+  const pingAlertThresholdMs = 250;
+  const packetLossAlertThreshold = 30;
+
+  const addLogEntry = useCallback((entry) => {
+    setLogEntries((prev) => {
+      const next = [
+        {
+          id: Date.now() + Math.random(),
+          time: Date.now(),
+          ...entry,
+        },
+        ...prev,
+      ];
+      const trimmed = next.slice(0, 200);
+      localStorage.setItem('logEntries', JSON.stringify(trimmed));
+      return trimmed;
+    });
+  }, []);
+
+  const handleClearLogs = () => {
+    localStorage.removeItem('logEntries');
+    setLogEntries([]);
+  };
+
+  const clearSpeedPhaseTimers = useCallback(() => {
+    speedPhaseTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+    speedPhaseTimersRef.current = [];
+  }, []);
+
+  const handleCopyText = useCallback(async (text, key) => {
+    const payload = String(text || '').trim();
+    if (!payload) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(payload);
+      } else {
+        const tempInput = document.createElement('textarea');
+        tempInput.value = payload;
+        tempInput.style.position = 'fixed';
+        tempInput.style.opacity = '0';
+        document.body.appendChild(tempInput);
+        tempInput.focus();
+        tempInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempInput);
+      }
+      setCopyFeedbackKey(key);
+      window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopyFeedbackKey('');
+      }, 1400);
+    } catch (error) {
+      console.error('Copy failed:', error);
+    }
+  }, []);
+
+  const loadPublicNetworkInfo = useCallback(async () => {
+    if (publicIpFetchInFlightRef.current) return;
+    publicIpFetchInFlightRef.current = true;
+    setIsPublicIpLoading(true);
+    try {
+      const result = await invoke('get_public_network_info');
+      const nextIp = String(result?.ip || '').trim() || 'N/A';
+      const nextCountry = String(result?.country || '').trim().toUpperCase() || 'N/A';
+      setPublicNetworkInfo((prev) => {
+        const changed = prev.ip !== 'N/A' && nextIp !== 'N/A' && (prev.ip !== nextIp || prev.country !== nextCountry);
+        if (changed) {
+          const detail = `${prev.ip} (${prev.country}) → ${nextIp} (${nextCountry})`;
+          addLogEntry({
+            type: 'network',
+            title: 'Public IP changed',
+            detail,
+          });
+        }
+        return {
+          ip: nextIp,
+          country: nextCountry,
+        };
+      });
+    } catch (error) {
+      console.error('Failed to load public network info:', error);
+    } finally {
+      publicIpFetchInFlightRef.current = false;
+      setIsPublicIpLoading(false);
+    }
+  }, [addLogEntry]);
+
+  const loadNetworkUsage = useCallback(async () => {
+    if (networkUsageInFlightRef.current) return;
+    networkUsageInFlightRef.current = true;
+    setNetworkLoading(true);
+    try {
+      const result = await invoke('get_network_usage_snapshot');
+      setNetworkSnapshot((current) => {
+        const resultTimestamp = Number(result?.timestampMs || 0);
+        const currentTimestamp = Number(current?.timestampMs || 0);
+        if (current && resultTimestamp && currentTimestamp && resultTimestamp <= currentTimestamp) {
+          return current;
+        }
+        if (current) {
+          setPreviousNetworkSnapshot(current);
+        }
+        return result;
+      });
+      setNetworkError(result?.error || '');
+    } catch (error) {
+      console.error('Failed to load network usage:', error);
+      setNetworkError(String(error || 'network-usage-failed'));
+    } finally {
+      networkUsageInFlightRef.current = false;
+      setNetworkLoading(false);
+    }
+  }, []);
+
+  const resetNetworkApplicationUsage = useCallback(async () => {
+    if (networkUsageResetting) return;
+    setNetworkUsageResetting(true);
+    setNetworkError('');
+    try {
+      await invoke('reset_network_application_usage');
+      setHoveredNetworkApplicationId('');
+      setNetworkSnapshot((current) => (
+        current ? { ...current, applications: [] } : current
+      ));
+    } catch (error) {
+      console.error('Failed to reset network application usage:', error);
+      setNetworkError(String(error || 'network-usage-reset-failed'));
+    } finally {
+      setNetworkUsageResetting(false);
+    }
+  }, [networkUsageResetting]);
+
+  const loadBandwidthLimiterState = useCallback(async () => {
+    try {
+      const result = await invoke('get_bandwidth_limiter_state');
+      setBandwidthLimiterState({
+        engine: result?.engine || null,
+        rules: Array.isArray(result?.rules) ? result.rules : [],
+      });
+    } catch (error) {
+      console.error('Failed to load bandwidth limiter state:', error);
+      setBandwidthLimitFeedback(String(error || 'bandwidth-limiter-state-failed'));
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(copyTimerRef.current);
+      clearSpeedPhaseTimers();
+    };
+  }, [clearSpeedPhaseTimers]);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.body.classList.remove('light-theme');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.body.classList.add('light-theme');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  useEffect(() => {
+    const loadVersion = async () => {
+      try {
+        const version = await invoke('get_app_version');
+        setAppVersion(version);
+      } catch (error) {
+        console.error('Failed to load app version:', error);
+      }
+    };
+    loadVersion();
+  }, []);
+
+  useEffect(() => {
+    const loadAutoLaunch = async () => {
+      try {
+        const enabled = await invoke('get_auto_launch');
+        setAutoLaunch(Boolean(enabled));
+      } catch (error) {
+        console.error('Failed to load auto-launch setting:', error);
+      }
+    };
+    loadAutoLaunch();
+  }, []);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('closeAction');
+    if (saved) {
+      setCloseAction(saved);
+      invoke('set_close_action', { action: saved }).catch(() => {});
+      return;
+    }
+    const loadCloseAction = async () => {
+      try {
+        const action = await invoke('get_close_action');
+        if (action) {
+          setCloseAction(action);
+        }
+      } catch (error) {
+        console.error('Failed to load close action:', error);
+      }
+    };
+    loadCloseAction();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('closeAction', closeAction);
+    invoke('set_close_action', { action: closeAction }).catch(() => {});
+  }, [closeAction]);
+
+  useEffect(() => {
+    localStorage.setItem('sidebarCollapsed', String(isSidebarCollapsed));
+  }, [isSidebarCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('activeProfile', activeProfile);
+  }, [activeProfile]);
+
+  useEffect(() => {
+    localStorage.setItem('compactMode', String(compactMode));
+    document.body.classList.toggle('compact-mode', compactMode);
+    return () => document.body.classList.remove('compact-mode');
+  }, [compactMode]);
+
+  useEffect(() => {
+    localStorage.setItem('speedProvider', speedProvider);
+  }, [speedProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('showPublicIp', String(showPublicIp));
+  }, [showPublicIp]);
+
+  useEffect(() => {
+    localStorage.setItem('betaUpdates', String(betaUpdates));
+  }, [betaUpdates]);
+
+  useEffect(() => {
+    localStorage.setItem('autoCheckUpdates', String(autoCheckUpdates));
+  }, [autoCheckUpdates]);
+
+  useEffect(() => {
+    localStorage.setItem('dnsBatchDomainsInput', batchDomainsInput);
+  }, [batchDomainsInput]);
+
+  useEffect(() => {
+    localStorage.setItem('dnsBenchmarkRounds', String(dnsBenchmarkRounds));
+  }, [dnsBenchmarkRounds]);
+
+  useEffect(() => {
+    localStorage.setItem('customDnsServers', JSON.stringify(customDnsServers));
+  }, [customDnsServers]);
+
+  useEffect(() => {
+    const savedName = localStorage.getItem('displayName');
+    if (savedName) {
+      setDisplayName(savedName);
+      setNameInput(savedName);
+      return;
+    }
+    const loadUsername = async () => {
+      try {
+        const username = await invoke('get_username');
+        setDisplayName(username);
+        setNameInput(username);
+      } catch (error) {
+        console.error('Failed to load username:', error);
+      }
+    };
+    loadUsername();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      await loadPublicNetworkInfo();
+    };
+
+    load();
+    const intervalId = window.setInterval(() => {
+      if (!active) return;
+      load();
+    }, 300000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [loadPublicNetworkInfo]);
+
+  useEffect(() => {
+    loadBandwidthLimiterState();
+  }, [loadBandwidthLimiterState]);
+
+  useEffect(() => {
+    if (currentPage !== 'network') return undefined;
+    loadNetworkUsage();
+    const intervalId = window.setInterval(loadNetworkUsage, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [currentPage, loadNetworkUsage]);
+
+  useEffect(() => {
+    const nextIp = String(speedMetrics?.ip || '').trim();
+    const nextCountry = String(speedMetrics?.country || '').trim().toUpperCase();
+    if (!nextIp || nextIp === 'N/A') return;
+    setPublicNetworkInfo((prev) => ({
+      ip: nextIp,
+      country: nextCountry || prev.country || 'N/A',
+    }));
+  }, [speedMetrics]);
+
+  const handleEditName = () => {
+    setIsEditingName(true);
+  };
+
+  const handleSaveName = () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+    setDisplayName(trimmed);
+    localStorage.setItem('displayName', trimmed);
+    setIsEditingName(false);
+  };
+
+  const handleCancelName = () => {
+    setNameInput(displayName);
+    setIsEditingName(false);
+  };
+
+  const applyProfile = useCallback((profileKey) => {
+    const profileHosts = HOST_PROFILES[profileKey] || DEFAULT_HOSTS;
+    const nextHosts = profileHosts.map((host, index) => ({
+      ...host,
+      id: host.type === 'custom' ? `${Date.now()}-${index}` : host.id,
+      pinned: false,
+      paused: false,
+    }));
+    setAllHosts(nextHosts);
+    setActiveProfile(profileKey);
+    localStorage.setItem('allHosts', JSON.stringify(nextHosts));
+    addLogEntry({
+      type: 'action',
+      title: 'Profile applied',
+      detail: profileKey,
+    });
+  }, [addLogEntry, setAllHosts]);
+
+  const handleFirstRunProfile = (profileKey) => {
+    applyProfile(profileKey);
+    localStorage.setItem('firstRunSetupDone', 'true');
+    setFirstRunOpen(false);
+  };
+
+  const sanitizeDomain = (input) => {
+    return String(input || '')
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .split('/')[0]
+      .split('?')[0]
+      .split('#')[0];
+  };
+
+  const normalizeDnsServer = (value) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return '';
+    return trimmed;
+  };
+
+  const isValidDnsServer = (value) => {
+    const normalized = normalizeDnsServer(value);
+    if (!normalized) return false;
+    const ipv4 = /^(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)){3}$/;
+    const ipv6 = /^([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}$/;
+    return ipv4.test(normalized) || ipv6.test(normalized);
+  };
+
+  const handleAddCustomDns = () => {
+    const normalized = normalizeDnsServer(customDnsInput);
+    if (!isValidDnsServer(normalized)) {
+      setDnsError(texts.dnsCustomInvalid);
+      return;
+    }
+    setDnsError('');
+    setCustomDnsServers((prev) => {
+      if (prev.includes(normalized)) return prev;
+      return [...prev, normalized];
+    });
+    setCustomDnsInput('');
+  };
+
+  const handleRemoveCustomDns = (serverToRemove) => {
+    setCustomDnsServers((prev) => prev.filter((server) => server !== serverToRemove));
+  };
+
+  const runDnsCheck = async (domain) => {
+    const sanitized = sanitizeDomain(domain);
+    if (!sanitized) {
+      return { domain: '', results: [], error: 'invalid' };
+    }
+    try {
+      const response = await invoke('test_dns_servers_with_custom', {
+        domain: sanitized,
+        customServers: customDnsServers,
+      });
+      if (response && !response.error) {
+        return { domain: sanitized, results: response.results || [], error: null };
+      }
+      return { domain: sanitized, results: [], error: response?.error || 'failed' };
+    } catch {
+      return { domain: sanitized, results: [], error: 'failed' };
+    }
+  };
+
+  const handleDnsTest = async () => {
+    if (dnsLoading || dnsBenchmarkLoading || batchLoading) return;
+    const sanitized = sanitizeDomain(dnsDomain);
+    if (!sanitized) {
+      setDnsError(texts.dnsInvalid);
+      return;
+    }
+    setDnsError('');
+    setDnsLoading(true);
+    setDnsBenchmarkStats([]);
+    setDnsResults([]);
+    try {
+      const response = await runDnsCheck(sanitized);
+      if (response.error) {
+        setDnsError(texts.dnsInvalid);
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsFailed,
+          detail: sanitized,
+        });
+      } else {
+        setDnsResults(response.results);
+        const usableCount = response.results.filter((item) => item.status).length;
+        const blockedCount = response.results.filter((item) => !item.status).length;
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsResult,
+          detail: `${sanitized} • ${texts.usable} ${usableCount} / ${texts.blocked} ${blockedCount}`,
+        });
+      }
+    } catch (error) {
+      console.error('DNS test failed:', error);
+      setDnsError(texts.dnsFailed);
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDnsFailed,
+        detail: sanitized,
+      });
+    } finally {
+      setDnsLoading(false);
+    }
+  };
+
+  const handleDnsBenchmark = async () => {
+    if (dnsLoading || dnsBenchmarkLoading || batchLoading) return;
+    const sanitized = sanitizeDomain(dnsDomain);
+    if (!sanitized) {
+      setDnsError(texts.dnsInvalid);
+      return;
+    }
+    const rounds = Math.max(1, Math.min(10, Number(dnsBenchmarkRounds) || 3));
+    setDnsError('');
+    setDnsBenchmarkLoading(true);
+    setDnsBenchmarkStats([]);
+    try {
+      const statsMap = new Map();
+      for (let i = 0; i < rounds; i += 1) {
+        const response = await runDnsCheck(sanitized);
+        if (response.error) {
+          throw new Error('dns-benchmark-failed');
+        }
+        for (const item of response.results) {
+          const existing = statsMap.get(item.server) || { server: item.server, ok: 0, total: 0, totalMs: 0 };
+          existing.total += 1;
+          if (item.status) {
+            existing.ok += 1;
+            existing.totalMs += Number(item.responseTimeMs) || 0;
+          }
+          statsMap.set(item.server, existing);
+        }
+        if (i === rounds - 1) {
+          setDnsResults(response.results);
+        }
+      }
+      const stats = Array.from(statsMap.values())
+        .map((item) => {
+          const averageMs = item.ok > 0 ? item.totalMs / item.ok : Number.POSITIVE_INFINITY;
+          return {
+            server: item.server,
+            averageMs,
+            successRate: Math.round((item.ok / item.total) * 100),
+          };
+        })
+        .sort((a, b) => a.averageMs - b.averageMs);
+      setDnsBenchmarkStats(stats);
+      const fastest = stats.filter((item) => Number.isFinite(item.averageMs)).slice(0, 3);
+      const fastestText = fastest
+        .map((item) => `${item.server} ${Math.round(item.averageMs)}ms`)
+        .join(' | ');
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDnsBenchmark,
+        detail: `${sanitized} • ${rounds}x • ${fastestText || texts.failed}`,
+      });
+    } catch (error) {
+      console.error('DNS benchmark failed:', error);
+      setDnsError(texts.dnsBenchmarkFailed);
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDnsFailed,
+        detail: `${sanitized} • ${texts.dnsBenchmarkFailed}`,
+      });
+    } finally {
+      setDnsBenchmarkLoading(false);
+    }
+  };
+
+  const handleBatchDomains = async () => {
+    if (dnsLoading || dnsBenchmarkLoading || batchLoading) return;
+    const domains = batchDomainsInput
+      .split(/\r?\n/)
+      .map((value) => sanitizeDomain(value))
+      .filter(Boolean)
+      .filter((value, index, arr) => arr.indexOf(value) === index)
+      .slice(0, 30);
+    if (domains.length === 0) {
+      setDnsError(texts.dnsBatchInvalid);
+      return;
+    }
+    setDnsError('');
+    setBatchLoading(true);
+    setBatchResults([]);
+    try {
+      const results = [];
+      for (const domain of domains) {
+        const response = await runDnsCheck(domain);
+        const usableCount = response.results.filter((item) => item.status).length;
+        const blockedCount = response.results.length - usableCount;
+        results.push({
+          domain,
+          status: usableCount > 0 ? 'resolved' : 'unresolved',
+          usableCount,
+          blockedCount,
+        });
+      }
+      setBatchResults(results);
+      const resolvedCount = results.filter((item) => item.status === 'resolved').length;
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDomainBatch,
+        detail: `${results.length} domains • ${texts.dnsResolved} ${resolvedCount}`,
+      });
+    } catch (error) {
+      console.error('Batch DNS check failed:', error);
+      setDnsError(texts.dnsBatchFailed);
+      addLogEntry({
+        type: 'dns',
+        title: texts.logDnsFailed,
+        detail: texts.dnsBatchFailed,
+      });
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const loadDnsAdapters = useCallback(async (forceRefresh = false) => {
+    try {
+      const adapters = await invoke('list_dns_adapters', { forceRefresh });
+      const normalized = Array.isArray(adapters) ? adapters : [];
+      setDnsAdapters(normalized);
+      if (normalized.length === 0) {
+        setDnsSelectedAdapter('');
+        setDnsPrimaryInput('');
+        setDnsSecondaryInput('');
+        return;
+      }
+      setDnsSelectedAdapter((current) => {
+        const exists = normalized.some((item) => getDnsAdapterKey(item) === current);
+        const selectedName = exists ? current : getDnsAdapterKey(normalized[0]);
+        const selected = normalized.find((item) => getDnsAdapterKey(item) === selectedName);
+        if (selected) {
+          setDnsPrimaryInput(selected.dns?.[0] || '');
+          setDnsSecondaryInput(selected.dns?.[1] || '');
+        }
+        return selectedName;
+      });
+    } catch (error) {
+      console.error('Failed to load dns adapters:', error);
+      setDnsAdapters([]);
+    }
+  }, []);
+
+  const handleApplySystemDns = async () => {
+    if (!dnsSelectedAdapter || !isValidDnsServer(dnsPrimaryInput)) {
+      setDnsManagerStatus(texts.dnsCustomInvalid);
+      return;
+    }
+    if (dnsSecondaryInput.trim() && !isValidDnsServer(dnsSecondaryInput)) {
+      setDnsManagerStatus(texts.dnsCustomInvalid);
+      return;
+    }
+    setDnsManagerLoading(true);
+    setDnsManagerStatus('');
+    try {
+      const backup = dnsAdapters.find((item) => getDnsAdapterKey(item) === dnsSelectedAdapter);
+      const adapterLabel = backup?.name || dnsSelectedAdapter;
+      if (backup) {
+        const nextBackup = { adapterName: getDnsAdapterKey(backup), adapterLabel: backup.name, dns: backup.dns || [] };
+        setLastDnsBackup(nextBackup);
+        localStorage.setItem('lastDnsBackup', JSON.stringify(nextBackup));
+      }
+      const result = await invoke('set_adapter_dns', {
+        adapterName: dnsSelectedAdapter,
+        primaryDns: dnsPrimaryInput.trim(),
+        secondaryDns: dnsSecondaryInput.trim() || null,
+      });
+      if (result && result.success) {
+        setDnsManagerStatus(texts.dnsManagerApplied);
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsResult,
+          detail: `${adapterLabel} • ${dnsPrimaryInput.trim()}${dnsSecondaryInput.trim() ? `, ${dnsSecondaryInput.trim()}` : ''}`,
+        });
+        await loadDnsAdapters(true);
+      } else {
+        setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
+      }
+    } catch (error) {
+      console.error('Failed to apply system dns:', error);
+      setDnsManagerStatus(texts.dnsManagerFailed);
+    } finally {
+      setDnsManagerLoading(false);
+    }
+  };
+
+  const handleApplyRecommendedDns = async () => {
+    if (!dnsRecommendation?.primary) {
+      setDnsManagerStatus(texts.dnsRecommendationEmpty);
+      return;
+    }
+    if (!dnsSelectedAdapter) {
+      setDnsToolMode('manager');
+      setDnsManagerStatus(texts.dnsManagerNoAdapters);
+      return;
+    }
+    setDnsPrimaryInput(dnsRecommendation.primary.server);
+    setDnsSecondaryInput(dnsRecommendation.secondary?.server || '');
+    setDnsManagerLoading(true);
+    setDnsManagerStatus('');
+    try {
+      const backup = dnsAdapters.find((item) => getDnsAdapterKey(item) === dnsSelectedAdapter);
+      const adapterLabel = backup?.name || dnsSelectedAdapter;
+      if (backup) {
+        const nextBackup = { adapterName: getDnsAdapterKey(backup), adapterLabel: backup.name, dns: backup.dns || [] };
+        setLastDnsBackup(nextBackup);
+        localStorage.setItem('lastDnsBackup', JSON.stringify(nextBackup));
+      }
+      const result = await invoke('set_adapter_dns', {
+        adapterName: dnsSelectedAdapter,
+        primaryDns: dnsRecommendation.primary.server,
+        secondaryDns: dnsRecommendation.secondary?.server || null,
+      });
+      if (result && result.success) {
+        setDnsManagerStatus(texts.dnsManagerApplied);
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsResult,
+          detail: `${adapterLabel} • ${dnsRecommendation.primary.server}${dnsRecommendation.secondary ? `, ${dnsRecommendation.secondary.server}` : ''}`,
+        });
+        await loadDnsAdapters(true);
+      } else {
+        setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
+      }
+    } catch (error) {
+      console.error('Failed to apply recommended dns:', error);
+      setDnsManagerStatus(texts.dnsManagerFailed);
+    } finally {
+      setDnsManagerLoading(false);
+    }
+  };
+
+  const handleRollbackDns = async () => {
+    if (!lastDnsBackup?.adapterName) return;
+    setDnsSelectedAdapter(lastDnsBackup.adapterName);
+    setDnsManagerLoading(true);
+    setDnsManagerStatus('');
+    try {
+      let result;
+      if (lastDnsBackup.dns?.[0]) {
+        result = await invoke('set_adapter_dns', {
+          adapterName: lastDnsBackup.adapterName,
+          primaryDns: lastDnsBackup.dns[0],
+          secondaryDns: lastDnsBackup.dns[1] || null,
+        });
+      } else {
+        result = await invoke('reset_adapter_dns', { adapterName: lastDnsBackup.adapterName });
+      }
+      if (result && result.success) {
+        setDnsManagerStatus(texts.dnsRollbackDone);
+        localStorage.removeItem('lastDnsBackup');
+        setLastDnsBackup(null);
+        await loadDnsAdapters(true);
+      } else {
+        setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
+      }
+    } catch (error) {
+      console.error('Failed to rollback dns:', error);
+      setDnsManagerStatus(texts.dnsManagerFailed);
+    } finally {
+      setDnsManagerLoading(false);
+    }
+  };
+
+  const handleResetSystemDns = async () => {
+    if (!dnsSelectedAdapter) return;
+    setDnsManagerLoading(true);
+    setDnsManagerStatus('');
+    try {
+      const result = await invoke('reset_adapter_dns', { adapterName: dnsSelectedAdapter });
+      if (result && result.success) {
+        setDnsManagerStatus(texts.dnsManagerResetDone);
+        const adapterLabel = selectedAdapterDetails?.name || dnsSelectedAdapter;
+        addLogEntry({
+          type: 'dns',
+          title: texts.logDnsResult,
+          detail: `${adapterLabel} • DHCP`,
+        });
+        await loadDnsAdapters(true);
+      } else {
+        setDnsManagerStatus(result?.error || texts.dnsManagerFailed);
+      }
+    } catch (error) {
+      console.error('Failed to reset system dns:', error);
+      setDnsManagerStatus(texts.dnsManagerFailed);
+    } finally {
+      setDnsManagerLoading(false);
+    }
+  };
+
+  const handleStartSpeed = () => {
+    clearSpeedPhaseTimers();
+    speedRequestRef.current.id += 1;
+    const requestId = speedRequestRef.current.id;
+    setSpeedStarted(false);
+    setSpeedMetrics(null);
+    setSpeedLoading(true);
+    setSpeedPhase('download');
+    speedPhaseTimersRef.current.push(window.setTimeout(() => {
+      if (requestId === speedRequestRef.current.id) {
+        setSpeedPhase('upload');
+      }
+    }, SPEED_PHASE_DOWNLOAD_DELAY_MS));
+    const command = speedProvider === 'hetzner' ? 'speedtest_hetzner' : 'speedtest_cloudflare';
+    invoke(command)
+      .then((result) => {
+        if (requestId !== speedRequestRef.current.id) return;
+        if (result && !result.error) {
+          setSpeedMetrics(result);
+          setSpeedStarted(true);
+          setSpeedPhase('final');
+          const countryName = getCountryName(result.country);
+          const countryPart = countryName ? ` • ${countryName}` : '';
+          addLogEntry({
+            type: 'speed',
+            title: texts.logSpeedComplete,
+            detail: `${texts.speedDownload}: ${result.downloadMbps} Mbps • ${texts.speedUpload}: ${result.uploadMbps} Mbps • ${texts.speedLatency}: ${result.latencyMs} ms${countryPart}`,
+          });
+          return;
+        }
+        setSpeedPhase('idle');
+      })
+      .catch((error) => {
+        console.error('Speed test failed:', error);
+        setSpeedPhase('idle');
+      })
+      .finally(() => {
+        if (requestId === speedRequestRef.current.id) {
+          setSpeedLoading(false);
+          clearSpeedPhaseTimers();
+        }
+      });
+  };
+
+  const handleStopSpeed = () => {
+    clearSpeedPhaseTimers();
+    speedRequestRef.current.id += 1;
+    setSpeedLoading(false);
+    setSpeedStarted(false);
+    setSpeedMetrics(null);
+    setSpeedPhase('idle');
+  };
+
+  const handleToggleAutoLaunch = async () => {
+    const next = !autoLaunch;
+    setAutoLaunch(next);
+    try {
+      const updated = await invoke('set_auto_launch', { enabled: next });
+      setAutoLaunch(Boolean(updated));
+    } catch (error) {
+      console.error('Failed to update auto-launch:', error);
+      setAutoLaunch(!next);
+    }
+  };
+
+  const requestCloseFlow = useCallback(() => {
+    if (closeAction !== 'ask') {
+      invoke('perform_close_action', { action: closeAction });
+      return;
+    }
+    setCloseRememberChoice(false);
+    setCloseModalOpen(true);
+  }, [closeAction]);
+
+  const handleCloseChoice = (action) => {
+    if (closeRememberChoice) {
+      setCloseAction(action);
+    }
+    setCloseModalOpen(false);
+    invoke('perform_close_action', { action });
+  };
+
+  const runUpdateCheck = useCallback(async ({ manual = false } = {}) => {
+    if (manual) {
+      setUpdateStatus(texts.updateChecking);
+    }
+    try {
+      const result = await invoke('check_for_updates', { includePrerelease: betaUpdates });
+      if (!result || result.error) {
+        if (manual) {
+          setUpdateStatus(texts.updateFailed);
+        }
+        return false;
+      }
+      if (result && result.updateAvailable) {
+        setUpdateInfo(result);
+        setUpdateModalOpen(true);
+        setUpdateStatus('');
+        return true;
+      }
+      if (manual) {
+        setUpdateStatus(texts.updateUpToDate);
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to check updates:', error);
+      if (manual) {
+        setUpdateStatus(texts.updateFailed);
+      }
+      return false;
+    }
+  }, [betaUpdates, isPersian]);
+
+  const handleCheckUpdates = () => {
+    runUpdateCheck({ manual: true });
+  };
+
+  useEffect(() => {
+    if (!autoCheckUpdates || !appVersion) return undefined;
+    // Only successful checks count toward the 24-hour interval. The old key was
+    // written before the request completed, which could suppress retries after
+    // a temporary network or GitHub API failure.
+    const lastCheckedAt = Number(localStorage.getItem('lastSuccessfulAutoUpdateCheckAt') || 0);
+    const now = Date.now();
+    if (Number.isFinite(lastCheckedAt) && now - lastCheckedAt < 24 * 60 * 60 * 1000) {
+      return undefined;
+    }
+    let initialTimerId = 0;
+    let retryTimerId = 0;
+    let cancelled = false;
+    const checkAndScheduleRetry = async () => {
+      const succeeded = await runUpdateCheck({ manual: false });
+      if (cancelled) return;
+      if (succeeded) {
+        localStorage.setItem('lastSuccessfulAutoUpdateCheckAt', String(Date.now()));
+      } else {
+        retryTimerId = window.setTimeout(checkAndScheduleRetry, 5 * 60 * 1000);
+      }
+    };
+    initialTimerId = window.setTimeout(checkAndScheduleRetry, 4000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialTimerId);
+      window.clearTimeout(retryTimerId);
+    };
+  }, [appVersion, autoCheckUpdates, runUpdateCheck]);
+
+  const handleUpdateDownload = async () => {
+    if (!updateInfo || !updateInfo.url) {
+      setUpdateModalOpen(false);
+      return;
+    }
+    try {
+      await openUrl(updateInfo.url);
+    } catch (error) {
+      console.error('Failed to open update URL:', error);
+    } finally {
+      setUpdateModalOpen(false);
+    }
+  };
+
+  const handleUpdateDismiss = () => {
+    setUpdateModalOpen(false);
+  };
+
+  const handlePingIntervalChange = (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value) || value <= 0) return;
+    setPingIntervalMs(value);
+    localStorage.setItem('pingIntervalMs', String(value));
+  };
+
+  const handleToggleOptimization = (event) => {
+    const next = Boolean(event.target.checked);
+    setOptimizationEnabled(next);
+    localStorage.setItem('optimizationEnabled', String(next));
+  };
+
+  const handleBenchmarkRoundsChange = (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isFinite(value) || value <= 0) return;
+    setDnsBenchmarkRounds(Math.min(10, Math.max(1, value)));
+  };
+
+  useEffect(() => {
+    if (currentPage !== 'speed') {
+      handleStopSpeed();
+    }
+  }, [currentPage]);
+
+  useEffect(() => {
+    if (currentPage === 'dns' && dnsToolMode === 'manager') {
+      loadDnsAdapters(false);
+    }
+  }, [currentPage, dnsToolMode, loadDnsAdapters]);
+
+  useEffect(() => {
+    setDnsBenchmarkStats([]);
+  }, [dnsDomain]);
+
+  const usableDns = dnsResults.filter((item) => item.status);
+  const blockedDns = dnsResults.filter((item) => !item.status);
+  const dnsTableRows = useMemo(() => {
+    const query = dnsSearch.trim().toLowerCase();
+    let rows = dnsResults.map((item) => {
+      const numericLatency = Number(item.responseTimeMs);
+      return {
+        ...item,
+        latencyMs: Number.isFinite(numericLatency) ? numericLatency : null,
+        statusKey: item.status ? 'usable' : 'blocked',
+      };
+    });
+
+    if (dnsStatusFilter !== 'all') {
+      rows = rows.filter((item) => item.statusKey === dnsStatusFilter);
+    }
+
+    if (query) {
+      rows = rows.filter((item) => String(item.server || '').toLowerCase().includes(query));
+    }
+
+    const [sortBy = 'latency', sortDir = 'asc'] = String(dnsSortKey || 'latency-asc').split('-');
+    rows.sort((a, b) => {
+      if (sortBy === 'server') {
+        return String(a.server || '').localeCompare(String(b.server || ''), undefined, { sensitivity: 'base' });
+      }
+      if (sortBy === 'status') {
+        const orderA = a.statusKey === 'usable' ? 0 : 1;
+        const orderB = b.statusKey === 'usable' ? 0 : 1;
+        return orderA - orderB;
+      }
+      const latencyA = Number.isFinite(a.latencyMs) ? a.latencyMs : Number.POSITIVE_INFINITY;
+      const latencyB = Number.isFinite(b.latencyMs) ? b.latencyMs : Number.POSITIVE_INFINITY;
+      return latencyA - latencyB;
+    });
+
+    if (sortDir === 'desc') {
+      rows.reverse();
+    }
+
+    return rows;
+  }, [dnsResults, dnsSearch, dnsSortKey, dnsStatusFilter]);
+
+  const topFastestDns = dnsBenchmarkStats
+    .filter((item) => Number.isFinite(item.averageMs))
+    .slice(0, 3);
+
+  const dnsRecommendation = useMemo(() => {
+    const source = dnsBenchmarkStats.length
+      ? dnsBenchmarkStats
+      : dnsResults.map((item) => ({
+          server: item.server,
+          averageMs: item.status ? Number(item.responseTimeMs) : Number.POSITIVE_INFINITY,
+          successRate: item.status ? 100 : 0,
+        }));
+    const usable = source
+      .filter((item) => Number.isFinite(item.averageMs) && item.successRate >= 80)
+      .sort((a, b) => a.averageMs - b.averageMs);
+    if (!usable.length) return null;
+    return {
+      primary: usable[0],
+      secondary: usable.find((item) => item.server !== usable[0].server) || null,
+    };
+  }, [dnsBenchmarkStats, dnsResults]);
+
+  const selectedAdapterDetails = useMemo(() => {
+    return dnsAdapters.find((adapter) => getDnsAdapterKey(adapter) === dnsSelectedAdapter) || null;
+  }, [dnsAdapters, dnsSelectedAdapter]);
+
+  const getInitials = (name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return 'U';
+    const parts = trimmed.split(/\s+/);
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+    return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase();
+  };
+
+  const getCountryName = useCallback((countryCode) => {
+    if (!countryCode || countryCode.length !== 2) return '';
+    try {
+      const display = new Intl.DisplayNames([isPersian ? 'fa-IR' : 'en-US'], {
+        type: 'region',
+      });
+      return display.of(countryCode.toUpperCase()) || '';
+    } catch {
+      return '';
+    }
+  }, [isPersian]);
+
+  const getFlagClass = (countryCode) => {
+    if (!countryCode || countryCode.length !== 2) return '';
+    const lower = countryCode.toLowerCase();
+    if (!/^[a-z]{2}$/.test(lower)) return '';
+    return `fi fi-${lower}`;
+  };
+
+  const isIran = (countryCode) => countryCode && countryCode.toUpperCase() === 'IR';
+  const publicIpFlagClass = getFlagClass(publicNetworkInfo.country);
+  const visiblePublicIp = showPublicIp ? publicNetworkInfo.ip : maskIpAddress(publicNetworkInfo.ip);
+
+  useEffect(() => {
+    const minimizeBtn = document.getElementById('minimize-button');
+    const maximizeBtn = document.getElementById('maximize-button');
+    const closeBtn = document.getElementById('close-button');
+    const githubBtn = document.getElementById('github-button');
+    const handleMinimize = () => invoke('perform_close_action', { action: 'minimize' });
+    const handleMaximize = () => {
+      invoke('toggle_window_maximize')
+        .then((maximized) => setIsWindowMaximized(Boolean(maximized)))
+        .catch(() => {});
+    };
+    const handleClose = () => requestCloseFlow();
+    const handleGithub = () => openUrl('https://github.com/SM8KE1/PulseNet');
+
+    minimizeBtn.addEventListener('click', handleMinimize);
+    maximizeBtn.addEventListener('click', handleMaximize);
+    closeBtn.addEventListener('click', handleClose);
+    githubBtn.addEventListener('click', handleGithub);
+
+    return () => {
+      minimizeBtn.removeEventListener('click', handleMinimize);
+      maximizeBtn.removeEventListener('click', handleMaximize);
+      closeBtn.removeEventListener('click', handleClose);
+      githubBtn.removeEventListener('click', handleGithub);
+    };
+  }, [requestCloseFlow]);
+
+  useEffect(() => {
+    let unlistenMaximized;
+
+    invoke('is_window_maximized')
+      .then((maximized) => setIsWindowMaximized(Boolean(maximized)))
+      .catch(() => {});
+
+    listen('window-maximized-changed', (event) => {
+      setIsWindowMaximized(Boolean(event.payload));
+    })
+      .then((unlisten) => {
+        unlistenMaximized = unlisten;
+      })
+      .catch(() => {});
+
+    return () => {
+      if (unlistenMaximized) unlistenMaximized();
+    };
+  }, []);
+
+  useEffect(() => {
+    // Linux grants ICMP access through capabilities; the full app should not ask users to run as admin.
+    if (IS_LINUX_RUNTIME) return;
+
+    const shown = localStorage.getItem('adminNoticeShown');
+    if (!shown) {
+      setAdminModalOpen(true);
+    }
+  }, []);
+
+  const handleAdminNoticeClose = () => {
+    localStorage.setItem('adminNoticeShown', 'true');
+    setAdminModalOpen(false);
+  };
+
+  useEffect(() => {
+    if (!scrollRef.current) return undefined;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+
+    const wrapper = scrollRef.current;
+    const content = wrapper.querySelector('.lenis-content');
+    if (!content) return undefined;
+
+    const lenis = new Lenis({
+      wrapper,
+      content,
+      duration: 1.1,
+      wheelMultiplier: 0.86,
+      smoothWheel: true,
+      smoothTouch: false,
+      easing: (t) => 1 - Math.pow(1 - t, 3),
+    });
+    lenisRef.current = lenis;
+
+    let rafId = 0;
+    const raf = (time) => {
+      lenis.raf(time);
+      rafId = requestAnimationFrame(raf);
+    };
+    rafId = requestAnimationFrame(raf);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      lenis.destroy();
+      if (lenisRef.current === lenis) {
+        lenisRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+    if (Boolean(activeDragId)) {
+      lenis.stop();
+    } else {
+      lenis.start();
+    }
+  }, [activeDragId]);
+
+  useEffect(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (lenisRef.current) {
+        lenisRef.current.scrollTo(0, { immediate: true, force: true });
+      }
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = 0;
+      }
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [currentPage]);
+
+  useEffect(() => {
+    let unlistenClose;
+    let unlistenTray;
+    listen('close-requested', (event) => {
+      const payload = event && event.payload ? event.payload : null;
+      if (payload && payload.reason === 'exit') return;
+      requestCloseFlow();
+    }).then((fn) => {
+      unlistenClose = fn;
+    });
+    listen('tray-open-page', (event) => {
+      const payload = event && event.payload ? event.payload : null;
+      const page = payload && payload.page ? payload.page : null;
+      if (page === 'settings') {
+        setCurrentPage('settings');
+      }
+    }).then((fn) => {
+      unlistenTray = fn;
+    });
+    return () => {
+      if (typeof unlistenClose === 'function') {
+        unlistenClose();
+      }
+      if (typeof unlistenTray === 'function') {
+        unlistenTray();
+      }
+    };
+  }, [requestCloseFlow]);
+
+
+  const getHostKey = useCallback((host) => {
+    return host.type === 'custom'
+      ? `custom-${host.id}`
+      : `default-${host.label}-${host.host}`;
+  }, []);
+
+  const handleAddNewHost = () => {
+    setEditingHost({ id: 'temp', label: '', host: '' });
+  };
+
+  const handleSaveHost = (label, host) => {
+    if (editingHost && editingHost.id === 'temp') {
+      addHost({ label, host });
+      setEditingHost(null);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingHost(null);
+  };
+
+  const handleDeleteHost = (hostToDelete) => {
+    const updatedHosts = allHosts.filter(host => {
+      if (host.type === 'custom') {
+        return host.id !== hostToDelete.id;
+      } else {
+        return !(host.label === hostToDelete.label && host.host === hostToDelete.host);
+      }
+    });
+    setAllHosts(updatedHosts);
+    localStorage.setItem('allHosts', JSON.stringify(updatedHosts));
+  };
+
+  const updateHostById = useCallback((hostId, updater) => {
+    setAllHosts((prevHosts) => {
+      const nextHosts = prevHosts.map((item) => {
+        if (getHostKey(item) !== hostId) return item;
+        return updater(item);
+      });
+      localStorage.setItem('allHosts', JSON.stringify(nextHosts));
+      return nextHosts;
+    });
+  }, [getHostKey, setAllHosts]);
+
+  const handleToggleHostPin = useCallback((hostId) => {
+    setAllHosts((prevHosts) => {
+      const sourceIndex = prevHosts.findIndex((item) => getHostKey(item) === hostId);
+      if (sourceIndex === -1) return prevHosts;
+      const source = prevHosts[sourceIndex];
+      const nextPinned = !Boolean(source.pinned);
+      const updated = { ...source, pinned: nextPinned };
+      const rest = prevHosts.filter((_, index) => index !== sourceIndex);
+      const nextHosts = nextPinned ? [updated, ...rest] : [...rest.slice(0, sourceIndex), updated, ...rest.slice(sourceIndex)];
+      localStorage.setItem('allHosts', JSON.stringify(nextHosts));
+      return nextHosts;
+    });
+  }, [getHostKey, setAllHosts]);
+
+  const handleToggleHostPause = useCallback((hostId) => {
+    updateHostById(hostId, (item) => ({
+      ...item,
+      paused: !Boolean(item.paused),
+    }));
+  }, [updateHostById]);
+
+  const hostItems = useMemo(() => {
+    return allHosts.map((host) => ({
+      host,
+      id: getHostKey(host),
+    }));
+  }, [allHosts, getHostKey]);
+
+  const setDraggingClass = useCallback((isDragging) => {
+    document.body.classList.toggle('dragging-host-card', isDragging);
+  }, []);
+
+  const clearDragState = useCallback(() => {
+    setActiveDragId(null);
+    lastOverIdRef.current = null;
+    setDraggingClass(false);
+  }, [setDraggingClass]);
+
+  const moveHostByIds = useCallback((activeId, overId) => {
+    setAllHosts((prevHosts) => {
+      const oldIndex = prevHosts.findIndex((host) => getHostKey(host) === activeId);
+      const newIndex = prevHosts.findIndex((host) => getHostKey(host) === overId);
+
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+        return prevHosts;
+      }
+
+      const nextOrder = arrayMove(prevHosts, oldIndex, newIndex);
+      localStorage.setItem('allHosts', JSON.stringify(nextOrder));
+      return nextOrder;
+    });
+  }, [getHostKey, setAllHosts]);
+
+  const handleDragStart = useCallback((event) => {
+    const { active } = event;
+    const activeId = active?.id ?? null;
+    setActiveDragId(activeId);
+    lastOverIdRef.current = activeId;
+    setDraggingClass(Boolean(activeId));
+  }, [setDraggingClass]);
+
+  const handleDragOver = useCallback((event) => {
+    const { over } = event;
+    if (over?.id) {
+      lastOverIdRef.current = over.id;
+    }
+  }, []);
+
+  const handleDragCancel = useCallback(() => {
+    clearDragState();
+  }, [clearDragState]);
+
+  const handleDragEnd = useCallback((event) => {
+    const { active, over } = event;
+    const activeId = active?.id;
+    const fallbackOverId = over?.id ?? lastOverIdRef.current;
+
+    if (!activeId || !fallbackOverId || activeId === fallbackOverId) {
+      clearDragState();
+      return;
+    }
+
+    moveHostByIds(activeId, fallbackOverId);
+    clearDragState();
+  }, [clearDragState, moveHostByIds]);
+
+  const activeDragHost = useMemo(() => {
+    if (!activeDragId) return null;
+    return hostItems.find((item) => item.id === activeDragId)?.host || null;
+  }, [activeDragId, hostItems]);
+
+  const isSortingHosts = Boolean(activeDragId);
+
+  useEffect(() => {
+    return () => {
+      setDraggingClass(false);
+    };
+  }, [setDraggingClass]);
+
+  const texts = useMemo(() => {
+    const en = {
+      platform: 'Platform',
+      ping: 'Ping',
+      dnsChecker: 'DNS Checker',
+      dnsToolTest: 'DNS Test',
+      dnsToolManager: 'DNS Manager',
+      speedTest: 'Speed Test',
+      networkUsage: 'Network Usage',
+      networkMonitorSubtitle: 'Live adapter traffic and active network processes',
+      networkDownloadLive: 'Download now',
+      networkUploadLive: 'Upload now',
+      networkTotalReceived: 'Total received',
+      networkTotalSent: 'Total sent',
+      networkAdapters: 'Adapters',
+      networkProcesses: 'Active processes',
+      networkProcessCountLabel: 'active apps',
+      networkClearSearch: 'Clear search',
+      networkRefresh: 'Refresh',
+      networkRefreshing: 'Refreshing...',
+      networkNoAdapters: 'No adapter data',
+      networkNoProcesses: 'No active process data',
+      networkProcess: 'Process',
+      networkPid: 'PID',
+      networkConnections: 'Connections',
+      networkRemote: 'Remote',
+      networkPath: 'Path',
+      networkSearchProcesses: 'Search process or remote IP...',
+      networkSortBy: 'Sort',
+      networkSortMostConnections: 'Most connections',
+      networkSortFewestConnections: 'Fewest connections',
+      networkSortLimitedFirst: 'Limited first',
+      networkSortNameAsc: 'Name A-Z',
+      networkSortNameDesc: 'Name Z-A',
+      networkAppDownloadTitle: 'App download share',
+      networkAppDownloadSubtitle: 'Tracked TCP downloads by application',
+      networkLinuxTrafficTitle: 'TCP download history',
+      networkLinuxTrafficSubtitle: 'Received TCP bytes grouped by application',
+      networkLinuxTrafficStatus: 'Waiting for TCP download activity',
+      networkLinuxTrafficNote: 'History accumulates bytes from observed active TCP sockets. Very short connections and UDP traffic may not be counted. The ss tool is required (iproute on Fedora, iproute2 on Debian and openSUSE).',
+      networkAppDownloadEmpty: 'No tracked app download data yet',
+      networkAppDownloadOther: 'Other apps',
+      networkAppDownloadTracked: 'Tracked total',
+      networkAppDownloadReset: 'Reset download history',
+      networkCategoryMain: 'Applications',
+      networkCategoryBrowsers: 'Browsers',
+      networkCategoryApps: 'Apps',
+      networkCategorySystem: 'System',
+      networkCategoryUnknown: 'Unknown',
+      networkStatusHigh: 'High activity',
+      networkStatusNormal: 'Normal',
+      networkStatusIdle: 'Idle',
+      networkGroupedPids: 'Grouped PIDs',
+      networkDetails: 'Details',
+      networkHideDetails: 'Hide',
+      networkShowMoreProcesses: 'Show more',
+      networkShowLessProcesses: 'Show less',
+      networkNoProcessMatches: 'No matching processes',
+      networkUnavailable: 'Network usage data is not available.',
+      networkLinuxProcessNote: 'Linux lists processes with open network sockets. Per-process byte totals are not available from Linux adapters.',
+      limiterTitle: 'Bandwidth limit',
+      limiterSetLimit: 'Set limit',
+      limiterEditLimit: 'Edit limit',
+      limiterActive: 'Limited',
+      limiterStaged: 'Staged',
+      limiterEngineReady: 'Network control ready',
+      limiterSetupRequired: 'Network control setup required',
+      limiterServiceStopped: 'Network control service is stopped',
+      limiterServicePreparing: 'Network control service is preparing',
+      limiterStagedHint: 'Install the PulseNet network control helper once to activate these rules.',
+      limiterBlockInternet: 'Block internet',
+      limiterUnblockInternet: 'Unblock internet',
+      limiterBlocked: 'Blocked',
+      limiterBlockSaved: 'Internet access blocked',
+      limiterDownload: 'Download limit',
+      limiterUpload: 'Upload limit',
+      limiterOptional: 'Optional',
+      limiterUnit: 'Unit',
+      limiterApply: 'Save rule',
+      limiterRemove: 'Remove limit',
+      limiterCancel: 'Cancel',
+      limiterSaved: 'Bandwidth rule saved',
+      limiterRemoved: 'Bandwidth rule removed',
+      limiterRequired: 'Enter at least one download or upload limit.',
+      limiterNoPath: 'An executable path is required for app limits.',
+      limiterKbps: 'Kbps',
+      limiterMbps: 'Mbps',
+      limiterKBps: 'KB/s',
+      limiterMBps: 'MB/s',
+      alerts: 'Log',
+      settings: 'Settings',
+      logAll: 'All',
+      logSpeed: 'Speed Test',
+      logAlerts: 'Alerts',
+      logDns: 'DNS',
+      logNetwork: 'Network',
+      logAction: 'Action',
+      logSearch: 'Search logs...',
+      logDateAll: 'All dates',
+      logDateToday: 'Last 24h',
+      logDateWeek: 'Last 7 days',
+      logExportJson: 'Export JSON',
+      logExportCsv: 'Export CSV',
+      logEmpty: 'No logs yet.',
+      logClear: 'Clear logs',
+      logOverview: 'Log overview',
+      logControls: 'Filters and export',
+      logTimeline: 'Event timeline',
+      logTotal: 'Total logs',
+      logFiltered: 'Visible',
+      logLatest: 'Latest event',
+      logNoLatest: 'No event recorded',
+      logSpeedComplete: 'Speed test completed',
+      logDnsResult: 'DNS test result',
+      logDnsFailed: 'DNS test failed',
+      logDnsBenchmark: 'DNS benchmark',
+      logDomainBatch: 'Domain batch check',
+      logPingAlert: 'Ping alert',
+      logPingHighLatency: 'High latency',
+      logPacketLoss: 'Packet loss',
+      logIpChanged: 'Public IP changed',
+      logProfileApplied: 'Profile applied',
+      settingsGeneral: 'General',
+      settingsMonitoring: 'Monitoring',
+      settingsUpdates: 'Updates',
+      settingsAutoLaunch: 'Auto launch',
+      settingsAutoLaunchHint: 'Start app when Windows boots',
+      settingsPingInterval: 'Ping interval (ms)',
+      settingsPingIntervalHint: 'How often pings refresh',
+      settingsOptimization: 'Optimization',
+      settingsOptimizationHint: 'Disable sparkline to reduce CPU usage',
+      settingsCompactMode: 'Compact mode',
+      settingsCompactModeHint: 'Show denser cards and controls',
+      settingsBackup: 'Settings backup',
+      settingsBackupHint: 'Export or import hosts, DNS tools, and preferences',
+      settingsExport: 'Export',
+      settingsImport: 'Import',
+      settingsImportDone: 'Settings imported',
+      settingsImportFailed: 'Settings import failed',
+      settingsUpdateTitle: 'Check Update Now',
+      settingsUpdateHint: 'Compare your version with GitHub',
+      settingsUpdateButton: 'Check',
+      settingsAutoUpdateCheck: 'Auto check updates',
+      settingsAutoUpdateCheckHint: 'Notify when a newer version is available',
+      settingsBetaUpdate: 'Beta updates',
+      settingsBetaUpdateHint: 'Include pre-release versions in update check',
+      updateChecking: 'Checking...',
+      updateUpToDate: 'You are up to date',
+      updateFailed: 'Update check failed',
+      updateModalTitle: 'Update available',
+      updateModalBody: 'A newer version is available. Download now?',
+      updateLinuxBody: 'On Ubuntu/Debian, update from the PulseNet APT repository with the command below. If you installed a downloaded DEB, install the newer file with “sudo apt install ./<package>.deb”; you do not need to uninstall first. For RPM distributions, use the matching package from the release page.',
+      updateLinuxCopyCommand: 'Copy APT update command',
+      updateLinuxAction: 'View Linux packages',
+      updateModalPrereleaseWarning: 'Warning: this is a beta pre-release and is not recommended for normal users.',
+      updateModalYes: 'Yes',
+      updateModalNo: 'Not now',
+      closeActionTitle: 'Action to closing',
+      closeActionHint: 'Choose what happens when closing the app',
+      closeActionHide: 'Hide',
+      closeActionExit: 'Exit',
+      closeActionAsk: 'Ask every time',
+      closeModalTitle: 'Hide or Exit the application',
+      closeModalRemember: 'Remember my choice',
+      adminNoticeTitle: 'Run PulseNet as administrator',
+      adminNoticeBody: 'This application uses ICMP to receive ping responses from servers, so it needs administrator privileges.',
+      adminNoticeOk: 'OK',
+      monitoring: 'Monitoring',
+      about: 'About',
+      add: 'Add',
+      edit: 'Edit',
+      publicIpLabel: 'Public IP',
+      publicIpRefresh: 'Refresh IP',
+      publicIpHide: 'Hide IP',
+      publicIpShow: 'Show IP',
+      save: 'Save',
+      cancel: 'Cancel',
+      copy: 'Copy',
+      copied: 'Copied',
+      copyShort: 'CP',
+      copiedShort: 'OK',
+      pin: 'Pin to top',
+      unpin: 'Unpin',
+      pinShort: 'PIN',
+      unpinShort: 'TOP',
+      pause: 'Pause ping',
+      resume: 'Resume ping',
+      pauseShort: 'PAUSE',
+      resumeShort: 'RUN',
+      statusGood: 'Good',
+      statusWarning: 'High',
+      statusStable: 'Stable',
+      statusDown: 'Down',
+      statusPaused: 'Paused',
+      statusUnknown: 'Unknown',
+      hostNameShortPlaceholder: 'Host name',
+      hostIpShortPlaceholder: 'IP address or domain',
+      packetLoss: 'Loss',
+      profiles: 'Profiles',
+      profileGaming: 'Gaming',
+      profileGamingHint: 'Low latency targets for games and voice',
+      profileWork: 'Work',
+      profileWorkHint: 'Developer and productivity endpoints',
+      profileStreaming: 'Streaming',
+      profileStreamingHint: 'Video and media services',
+      profileIran: 'Iran',
+      profileIranHint: 'Local services and domestic checks',
+      firstRunTitle: 'Choose a monitoring profile',
+      firstRunSkip: 'Skip for now',
+      dnsPlaceholder: 'example.com',
+      dnsTest: 'Test DNS',
+      dnsTesting: 'Testing...',
+      dnsBenchmark: 'Benchmark DNS',
+      dnsBenchmarking: 'Benchmarking...',
+      dnsBenchmarkRounds: 'Rounds',
+      dnsTopFastest: 'Top fastest',
+      dnsAverage: 'Avg',
+      dnsSuccessRate: 'Success',
+      dnsInvalid: 'Enter a domain (e.g. example.com)',
+      dnsFailed: 'DNS test failed',
+      dnsBenchmarkDone: 'DNS benchmark completed',
+      dnsBenchmarkFailed: 'DNS benchmark failed',
+      dnsCustomTitle: 'Custom DNS tools',
+      dnsCustomPlaceholder: 'DNS server (e.g. 1.1.1.2)',
+      dnsAddServer: 'Add DNS',
+      dnsCustomEmpty: 'No custom DNS added',
+      dnsCustomInvalid: 'Enter a valid DNS IP',
+      dnsBatchTitle: 'Domain Batch Checker',
+      dnsBatchPlaceholder: 'One domain per line (e.g. youtube.com)',
+      dnsBatchRun: 'Run Batch',
+      dnsBatchRunning: 'Running...',
+      dnsBatchInvalid: 'Enter at least one valid domain',
+      dnsBatchDone: 'Batch check completed',
+      dnsBatchFailed: 'Batch check failed',
+      dnsResolved: 'Resolved',
+      dnsUnresolved: 'Unresolved',
+      dnsSearchPlaceholder: 'Search DNS...',
+      dnsSortLatencyAsc: 'Latency (Low to High)',
+      dnsSortLatencyDesc: 'Latency (High to Low)',
+      dnsSortServerAsc: 'Server (A-Z)',
+      dnsSortServerDesc: 'Server (Z-A)',
+      dnsSortStatus: 'Status',
+      dnsTableServer: 'Server',
+      dnsTableLatency: 'Latency',
+      dnsTableStatus: 'Status',
+      dnsTableActions: 'Actions',
+      dnsTableEmpty: 'No DNS results found',
+      dnsManagerTitle: 'System DNS Manager',
+      dnsManagerAdapter: 'Network adapter',
+      dnsManagerRefresh: 'Refresh',
+      dnsManagerPrimary: 'Primary DNS',
+      dnsManagerSecondary: 'Secondary DNS (optional)',
+      dnsManagerApply: 'Apply DNS',
+      dnsManagerReset: 'Reset (DHCP)',
+      dnsManagerNoAdapters: 'No adapter found',
+      dnsManagerApplied: 'DNS updated successfully',
+      dnsManagerResetDone: 'DNS reset to automatic',
+      dnsManagerFailed: 'Failed to update DNS',
+      dnsRecommendation: 'Recommended DNS',
+      dnsApplyRecommended: 'Apply recommended DNS',
+      dnsRecommendationEmpty: 'Run a DNS test or benchmark first',
+      dnsRollback: 'Rollback DNS',
+      dnsRollbackDone: 'DNS rollback completed',
+      adapterCurrentDns: 'Current DNS',
+      adapterIpv4: 'IPv4',
+      adapterGateway: 'Gateway',
+      adapterStatus: 'Status',
+      usable: 'Usable',
+      blocked: 'Blocked',
+      failed: 'failed',
+      speedDownload: 'Download',
+      speedUpload: 'Upload',
+      speedLatency: 'Latency',
+      speedJitter: 'Jitter',
+      speedStart: 'Start',
+      speedStop: 'Stop',
+      speedPhaseIdle: 'Ready',
+      speedPhaseDownload: 'Testing Download',
+      speedPhaseUpload: 'Testing Upload',
+      speedPhaseFinal: 'Completed',
+      speedProviderTitle: 'Provider',
+      speedProviderCloudflare: 'Cloudflare',
+      speedProviderHetzner: 'Hetzner',
+      speedOverview: 'Connection overview',
+      speedPublicIp: 'Public IP',
+      speedQuality: 'Quality',
+      speedQualityReady: 'Not tested',
+      speedQualityGreat: 'Great',
+      speedQualityStable: 'Stable',
+      speedQualityUnstable: 'Unstable',
+      speedNote: 'Note: If you use IP-changing tools, enable the Tunnel option in the tool settings to show updates.',
+      aboutProductLabel: 'Product',
+      aboutVersionLabel: 'Version',
+      aboutDeveloperLabel: 'Developer',
+      aboutContactLabel: 'Contact',
+      aboutDevTitle: 'PulseNet Developer',
+      aboutDevLine1: 'PulseNet is designed and developed by',
+      aboutDevLine2: 'For contact or to explore more projects, visit the GitHub page below:',
+      aboutGithubLink: 'View on GitHub',
+      dragToReorder: 'Drag to reorder',
+      dragPreviewMove: 'Move',
+      reorderHint: 'Reorder mode is on: drag cards to change order and use × to delete.',
+      deleteTitle: (label) => `Delete ${label}`,
+    };
+    const fa = {
+      platform: '\u067e\u0644\u062a\u0641\u0631\u0645',
+      ping: '\u067e\u06cc\u0646\u06af',
+      dnsChecker: '\u062a\u0633\u062a \u062f\u0627\u0645\u0646\u0647',
+      dnsToolTest: 'DNS تست',
+      dnsToolManager: 'DNS مدیریت',
+      speedTest: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
+      networkUsage: 'مصرف شبکه',
+      networkMonitorSubtitle: 'نمایش زنده ترافیک آداپتورها و پردازش‌های فعال شبکه',
+      networkDownloadLive: 'دانلود لحظه‌ای',
+      networkUploadLive: 'آپلود لحظه‌ای',
+      networkTotalReceived: 'کل دریافت',
+      networkTotalSent: 'کل ارسال',
+      networkAdapters: 'آداپتورها',
+      networkProcesses: 'پردازش‌های فعال',
+      networkProcessCountLabel: 'برنامه فعال',
+      networkClearSearch: 'پاک کردن جستجو',
+      networkRefresh: 'به‌روزرسانی',
+      networkRefreshing: 'در حال به‌روزرسانی...',
+      networkNoAdapters: 'داده‌ای از آداپتور وجود ندارد',
+      networkNoProcesses: 'داده‌ای از پردازش فعال وجود ندارد',
+      networkProcess: 'پردازش',
+      networkPid: 'PID',
+      networkConnections: 'اتصال‌ها',
+      networkRemote: 'ریموت',
+      networkPath: 'مسیر',
+      networkSearchProcesses: 'جستجو',
+      networkSortBy: 'مرتب‌سازی',
+      networkSortMostConnections: 'بیشترین اتصال',
+      networkSortFewestConnections: 'کمترین اتصال',
+      networkSortLimitedFirst: 'دارای محدودیت',
+      networkSortNameAsc: 'نام A-Z',
+      networkSortNameDesc: 'نام Z-A',
+      networkAppDownloadTitle: 'سهم دانلود برنامه‌ها',
+      networkAppDownloadSubtitle: 'TCP دانلود ها بر حسب کانکشن',
+      networkLinuxTrafficTitle: 'تاریخچه دانلود TCP',
+      networkLinuxTrafficSubtitle: 'حجم دریافت‌شدهٔ TCP به تفکیک برنامه',
+      networkLinuxTrafficStatus: 'در انتظار ثبت ترافیک TCP',
+      networkLinuxTrafficNote: 'تاریخچه از شمارندهٔ اتصال‌های TCP فعال جمع می‌شود. ممکن است اتصال‌های خیلی کوتاه و ترافیک UDP ثبت نشوند. ابزار ss لازم است (بستهٔ iproute در فدورا و iproute2 در دبیان و openSUSE).',
+      networkAppDownloadEmpty: 'هنوز داده‌ای از دانلود برنامه‌ها ثبت نشده است',
+      networkAppDownloadOther: 'سایر برنامه‌ها',
+      networkAppDownloadTracked: 'مجموع ثبت‌شده',
+      networkAppDownloadReset: 'بازنشانی تاریخچه دانلود',
+      networkCategoryMain: 'برنامه‌ها',
+      networkCategoryBrowsers: 'مرورگرها',
+      networkCategoryApps: 'برنامه‌ها',
+      networkCategorySystem: 'سیستم',
+      networkCategoryUnknown: 'نامشخص',
+      networkStatusHigh: 'فعالیت بالا',
+      networkStatusNormal: 'عادی',
+      networkStatusIdle: 'کم‌فعال',
+      networkGroupedPids: 'PIDهای گروه‌شده',
+      networkDetails: 'جزئیات',
+      networkHideDetails: 'بستن',
+      networkShowMoreProcesses: 'نمایش بیشتر',
+      networkShowLessProcesses: 'نمایش کمتر',
+      networkNoProcessMatches: 'پردازشی مطابق جستجو پیدا نشد',
+      networkUnavailable: 'داده مصرف شبکه در دسترس نیست.',
+      networkLinuxProcessNote: 'در لینوکس پردازش‌های دارای اتصال شبکه نمایش داده می‌شوند؛ آداپتورها حجم جداگانهٔ هر برنامه را گزارش نمی‌کنند.',
+      limiterTitle: 'محدودیت پهنای باند',
+      limiterSetLimit: 'اعمال محدودیت',
+      limiterEditLimit: 'ویرایش محدودیت',
+      limiterActive: 'محدودشده',
+      limiterStaged: 'در انتظار راه‌اندازی',
+      limiterEngineReady: 'کنترل شبکه آماده است',
+      limiterSetupRequired: 'راه‌اندازی کنترل شبکه لازم است',
+      limiterServiceStopped: 'سرویس کنترل شبکه متوقف است',
+      limiterServicePreparing: 'سرویس کنترل شبکه در حال آماده‌سازی است',
+      limiterStagedHint: ' برای فعال‌شدن قانون‌ها، ابزار کنترل شبکه را یک‌بار نصب کنید.',
+      limiterBlockInternet: 'قطع اینترنت',
+      limiterUnblockInternet: 'وصل اینترنت',
+      limiterBlocked: 'قطع‌شده',
+      limiterBlockSaved: 'دسترسی اینترنت برنامه قطع شد',
+      limiterDownload: 'محدودیت دانلود',
+      limiterUpload: 'محدودیت آپلود',
+      limiterOptional: 'اختیاری',
+      limiterUnit: 'واحد',
+      limiterApply: 'ذخیره قانون',
+      limiterRemove: 'حذف محدودیت',
+      limiterCancel: 'انصراف',
+      limiterSaved: 'قانون پهنای باند ذخیره شد',
+      limiterRemoved: 'محدودیت حذف شد',
+      limiterRequired: 'حداقل مقدار دانلود یا آپلود را وارد کنید.',
+      limiterNoPath: 'برای محدودسازی برنامه، مسیر فایل اجرایی لازم است.',
+      limiterKbps: 'Kbps',
+      limiterMbps: 'Mbps',
+      limiterKBps: 'KB/s',
+      limiterMBps: 'MB/s',
+      alerts: '\u0644\u0627\u06af',
+      settings: '\u062a\u0646\u0638\u06cc\u0645\u0627\u062a',
+      logAll: '\u0647\u0645\u0647',
+      logSpeed: '\u062a\u0633\u062a \u0633\u0631\u0639\u062a',
+      logAlerts: '\u0647\u0634\u062f\u0627\u0631\u0647\u0627',
+      logDns: 'DNS',
+      logNetwork: '\u0634\u0628\u06a9\u0647',
+      logAction: '\u0627\u0642\u062f\u0627\u0645',
+      logSearch: '\u062c\u0633\u062a\u062c\u0648\u06cc \u0644\u0627\u06af...',
+      logDateAll: '\u0647\u0645\u0647 \u062a\u0627\u0631\u06cc\u062e\u200c\u0647\u0627',
+      logDateToday: '\u06f2\u06f4 \u0633\u0627\u0639\u062a \u0627\u062e\u06cc\u0631',
+      logDateWeek: '\u06f7 \u0631\u0648\u0632 \u0627\u062e\u06cc\u0631',
+      logExportJson: '\u062e\u0631\u0648\u062c\u06cc JSON',
+      logExportCsv: '\u062e\u0631\u0648\u062c\u06cc CSV',
+      logEmpty: '\u0647\u0646\u0648\u0632 \u0644\u0627\u06af\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647 \u0627\u0633\u062a.',
+      logClear: '\u067e\u0627\u06a9 \u06a9\u0631\u062f\u0646 \u0644\u0627\u06af\u200c\u0647\u0627',
+      logOverview: '\u062e\u0644\u0627\u0635\u0647 \u0644\u0627\u06af',
+      logControls: '\u0641\u06cc\u0644\u062a\u0631 \u0648 \u062e\u0631\u0648\u062c\u06cc',
+      logTimeline: '\u062e\u0637 \u0632\u0645\u0627\u0646 \u0631\u0648\u06cc\u062f\u0627\u062f\u0647\u0627',
+      logTotal: '\u06a9\u0644 \u0644\u0627\u06af\u200c\u0647\u0627',
+      logFiltered: '\u0646\u0645\u0627\u06cc\u0634\u200c\u062f\u0627\u062f\u0647 \u0634\u062f\u0647',
+      logLatest: '\u0622\u062e\u0631\u06cc\u0646 \u0631\u0648\u06cc\u062f\u0627\u062f',
+      logNoLatest: '\u0631\u0648\u06cc\u062f\u0627\u062f\u06cc \u062b\u0628\u062a \u0646\u0634\u062f\u0647',
+      logSpeedComplete: '\u067e\u0627\u06cc\u0627\u0646 \u062a\u0633\u062a \u0633\u0631\u0639\u062a',
+      logDnsResult: '\u0646\u062a\u06cc\u062c\u0647 \u062a\u0633\u062a DNS',
+      logDnsFailed: '\u062e\u0637\u0627 \u062f\u0631 \u062a\u0633\u062a DNS',
+      logDnsBenchmark: '\u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS',
+      logDomainBatch: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc \u062f\u0627\u0645\u0646\u0647',
+      logPingAlert: '\u0647\u0634\u062f\u0627\u0631 \u067e\u06cc\u0646\u06af',
+      logPingHighLatency: '\u062a\u0627\u062e\u06cc\u0631 \u0628\u0627\u0644\u0627',
+      logPacketLoss: '\u0627\u0641\u062a \u067e\u06a9\u062a',
+      logIpChanged: '\u062a\u063a\u06cc\u06cc\u0631 \u0622\u06cc\u200c\u067e\u06cc \u0639\u0645\u0648\u0645\u06cc',
+      logProfileApplied: '\u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u0627\u0639\u0645\u0627\u0644 \u0634\u062f',
+      settingsGeneral: '\u0639\u0645\u0648\u0645\u06cc',
+      settingsMonitoring: '\u067e\u0627\u06cc\u0634',
+      settingsUpdates: '\u0622\u067e\u062f\u06cc\u062a\u200c\u0647\u0627',
+      settingsAutoLaunch: '\u0627\u062c\u0631\u0627\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631',
+      settingsAutoLaunchHint: '\u0628\u0627 \u0631\u0648\u0634\u0646 \u0634\u062f\u0646 \u0648\u06cc\u0646\u062f\u0648\u0632 \u0627\u062c\u0631\u0627 \u0634\u0648\u062f',
+      settingsPingInterval: '\u0628\u0627\u0632\u0647 \u067e\u06cc\u0646\u06af (\u0645\u06cc\u0644\u06cc \u062b\u0627\u0646\u06cc\u0647)',
+      settingsPingIntervalHint: '\u0641\u0627\u0635\u0644\u0647 \u0628\u0647 \u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc \u067e\u06cc\u0646\u06af',
+      settingsOptimization: '\u0628\u0647\u06cc\u0646\u0647\u200c\u0633\u0627\u0632\u06cc',
+      settingsOptimizationHint: '\u0628\u0631\u0627\u06cc \u06a9\u0627\u0647\u0634 \u0645\u0635\u0631\u0641 CPU \u0646\u0645\u0648\u062f\u0627\u0631 \u062e\u0637\u06cc \u062e\u0627\u0645\u0648\u0634 \u0645\u06cc\u200c\u0634\u0648\u062f',
+      settingsCompactMode: '\u062d\u0627\u0644\u062a \u0641\u0634\u0631\u062f\u0647',
+      settingsCompactModeHint: '\u06a9\u0627\u0631\u062a\u200c\u0647\u0627 \u0648 \u0627\u0628\u0632\u0627\u0631\u0647\u0627 \u0641\u0634\u0631\u062f\u0647\u200c\u062a\u0631 \u0646\u0645\u0627\u06cc\u0634 \u062f\u0627\u062f\u0647 \u0645\u06cc\u200c\u0634\u0648\u0646\u062f',
+      settingsBackup: '\u067e\u0634\u062a\u06cc\u0628\u0627\u0646 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a',
+      settingsBackupHint: '\u0645\u06cc\u0632\u0628\u0627\u0646\u200c\u0647\u0627\u060c DNS \u0648 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0631\u0627 \u062e\u0631\u0648\u062c\u06cc \u06cc\u0627 \u0648\u0631\u0648\u062f\u06cc \u0628\u06af\u06cc\u0631',
+      settingsExport: '\u062e\u0631\u0648\u062c\u06cc',
+      settingsImport: '\u0648\u0631\u0648\u062f\u06cc',
+      settingsImportDone: '\u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0648\u0627\u0631\u062f \u0634\u062f',
+      settingsImportFailed: '\u0648\u0631\u0648\u062f \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      settingsUpdateTitle: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a',
+      settingsUpdateHint: '\u0645\u0642\u0627\u06cc\u0633\u0647 \u0648\u0631\u0698\u0646 \u0628\u0627 \u06af\u06cc\u062a \u0647\u0627\u0628',
+      settingsUpdateButton: '\u0628\u0631\u0631\u0633\u06cc',
+      settingsAutoUpdateCheck: '\u0628\u0631\u0631\u0633\u06cc \u062e\u0648\u062f\u06a9\u0627\u0631 \u0622\u067e\u062f\u06cc\u062a',
+      settingsAutoUpdateCheckHint: '\u0648\u0642\u062a\u06cc \u0646\u0633\u062e\u0647 \u062c\u062f\u06cc\u062f \u0645\u0648\u062c\u0648\u062f \u0628\u0648\u062f \u0627\u0637\u0644\u0627\u0639 \u0628\u062f\u0647',
+      settingsBetaUpdate: '\u0622\u067e\u062f\u06cc\u062a \u0628\u062a\u0627',
+      settingsBetaUpdateHint: '\u0646\u0633\u062e\u0647\u200c\u0647\u0627\u06cc pre-release \u0647\u0645 \u0628\u0631\u0631\u0633\u06cc \u0634\u0648\u062f',
+      updateChecking: '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0631\u0631\u0633\u06cc...',
+      updateUpToDate: '\u0648\u0631\u0698\u0646 \u0634\u0645\u0627 \u0628\u0647\u200c\u0631\u0648\u0632 \u0627\u0633\u062a',
+      updateFailed: '\u0628\u0631\u0631\u0633\u06cc \u0622\u067e\u062f\u06cc\u062a \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      updateModalTitle: '\u0622\u067e\u062f\u06cc\u062a \u062c\u062f\u06cc\u062f',
+      updateModalBody: '\u0648\u0631\u0698\u0646 \u062c\u062f\u06cc\u062f\u06cc \u0648\u062c\u0648\u062f \u062f\u0627\u0631\u062f. \u062f\u0627\u0646\u0644\u0648\u062f \u0645\u06cc\u200c\u06a9\u0646\u06cc\u062f\u061f',
+      updateLinuxBody: '\u062f\u0631 \u0627\u0648\u0628\u0648\u0646\u062a\u0648 \u0648 \u062f\u0628\u06cc\u0646\u060c \u0628\u0627 \u062f\u0633\u062a\u0648\u0631 \u0632\u06cc\u0631 \u0627\u0632 \u0645\u062e\u0632\u0646 APT \u067e\u0648\u0644\u0633\u200c\u0646\u062a \u0622\u067e\u062f\u06cc\u062a \u06a9\u0646\u06cc\u062f. \u0627\u06af\u0631 \u0641\u0627\u06cc\u0644 DEB \u0631\u0627 \u0645\u0633\u062a\u0642\u06cc\u0645 \u0646\u0635\u0628 \u06a9\u0631\u062f\u0647\u200c\u0627\u06cc\u062f\u060c \u0641\u0627\u06cc\u0644 \u062c\u062f\u06cc\u062f \u0631\u0627 \u0628\u0627 \u00ab sudo apt install ./<package>.deb \u00bb \u0646\u0635\u0628 \u06a9\u0646\u06cc\u062f\u061b \u0646\u06cc\u0627\u0632\u06cc \u0628\u0647 \u062d\u0630\u0641 \u0646\u0633\u062e\u0647 \u0642\u0628\u0644 \u0646\u06cc\u0633\u062a. \u0628\u0631\u0627\u06cc RPM \u0641\u0627\u06cc\u0644 \u0645\u0646\u0627\u0633\u0628 \u0631\u0627 \u0627\u0632 \u0635\u0641\u062d\u0647 \u0627\u0646\u062a\u0634\u0627\u0631 \u062f\u0627\u0646\u0644\u0648\u062f \u06a9\u0646\u06cc\u062f.',
+      updateLinuxCopyCommand: '\u06a9\u067e\u06cc \u062f\u0633\u062a\u0648\u0631 \u0622\u067e\u062f\u06cc\u062a APT',
+      updateLinuxAction: '\u0645\u0634\u0627\u0647\u062f\u0647 \u0628\u0633\u062a\u0647\u200c\u0647\u0627\u06cc \u0644\u06cc\u0646\u0648\u06a9\u0633',
+      updateModalPrereleaseWarning: '\u0647\u0634\u062f\u0627\u0631: \u0627\u06cc\u0646 \u0646\u0633\u062e\u0647 \u0628\u062a\u0627 (pre-release) \u0627\u0633\u062a \u0648 \u0628\u0631\u0627\u06cc \u06a9\u0627\u0631\u0628\u0631 \u0639\u0627\u062f\u06cc \u067e\u06cc\u0634\u0646\u0647\u0627\u062f \u0646\u0645\u06cc\u200c\u0634\u0648\u062f.',
+      updateModalYes: '\u0628\u0644\u0647',
+      updateModalNo: '\u0641\u0639\u0644\u0627 \u0646\u0647',
+      closeActionTitle: '\u0627\u0642\u062f\u0627\u0645 \u0647\u0646\u06af\u0627\u0645 \u0628\u0633\u062a\u0646',
+      closeActionHint: '\u0628\u0627 \u0628\u0633\u062a\u0646 \u0628\u0631\u0646\u0627\u0645\u0647 \u0686\u0647 \u0627\u062a\u0641\u0627\u0642\u06cc \u0628\u06cc\u0641\u062a\u062f',
+      closeActionHide: '\u067e\u0646\u0647\u0627\u0646 \u06a9\u0631\u062f\u0646',
+      closeActionExit: '\u062e\u0631\u0648\u062c',
+      closeActionAsk: '\u0647\u0631 \u0628\u0627\u0631 \u0628\u067e\u0631\u0633',
+      closeModalTitle: '\u0628\u0631\u0646\u0627\u0645\u0647 \u067e\u0646\u0647\u0627\u0646 \u0634\u0648\u062f \u06cc\u0627 \u0628\u0633\u062a\u0647 \u0634\u0648\u062f\u061f',
+      closeModalRemember: '\u0627\u0646\u062a\u062e\u0627\u0628 \u0645\u0646 \u0631\u0627 \u0628\u0647 \u062e\u0627\u0637\u0631 \u0628\u0633\u067e\u0627\u0631',
+      adminNoticeTitle: '\u0627\u062c\u0631\u0627\u06cc PulseNet \u0628\u0627 \u062f\u0633\u062a\u0631\u0633\u06cc \u0645\u062f\u06cc\u0631',
+      adminNoticeBody: '\u0627\u06cc\u0646 \u0628\u0631\u0646\u0627\u0645\u0647 \u0628\u0631\u0627\u06cc \u062f\u0631\u06cc\u0627\u0641\u062a \u067e\u0627\u0633\u062e \u067e\u06cc\u0646\u06af \u0627\u0632 \u0633\u0631\u0648\u0631\u0647\u0627 \u0627\u0632 ICMP \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0645\u06cc\u200c\u06a9\u0646\u062f\u061b \u0628\u0646\u0627\u0628\u0631\u0627\u06cc\u0646 \u0628\u0647 \u062f\u0633\u062a\u0631\u0633\u06cc \u0645\u062f\u06cc\u0631 \u0646\u06cc\u0627\u0632 \u062f\u0627\u0631\u062f.',
+      adminNoticeOk: '\u0645\u062a\u0648\u062c\u0647 \u0634\u062f\u0645',
+      monitoring: '\u067e\u0627\u06cc\u0634',
+      about: '\u062f\u0631\u0628\u0627\u0631\u0647',
+      add: '\u0627\u0641\u0632\u0648\u062f\u0646',
+      edit: '\u0648\u06cc\u0631\u0627\u06cc\u0634',
+      publicIpLabel: '\u0622\u06cc\u200c\u067e\u06cc \u0639\u0645\u0648\u0645\u06cc',
+      publicIpRefresh: '\u0628\u0631\u0631\u0633\u06cc \u0645\u062c\u062f\u062f \u0622\u06cc\u200c\u067e\u06cc',
+      publicIpHide: '\u0645\u062e\u0641\u06cc\u200c\u0633\u0627\u0632\u06cc \u0622\u06cc\u200c\u067e\u06cc',
+      publicIpShow: '\u0646\u0645\u0627\u06cc\u0634 \u0622\u06cc\u200c\u067e\u06cc',
+      save: '\u0630\u062e\u06cc\u0631\u0647',
+      cancel: '\u0644\u063a\u0648',
+      copy: '\u06a9\u067e\u06cc',
+      copied: '\u06a9\u067e\u06cc \u0634\u062f',
+      copyShort: 'CP',
+      copiedShort: 'OK',
+      pin: '\u0633\u0646\u062c\u0627\u0642 \u0628\u0647 \u0628\u0627\u0644\u0627',
+      unpin: '\u062d\u0630\u0641 \u0633\u0646\u062c\u0627\u0642',
+      pinShort: 'PIN',
+      unpinShort: 'TOP',
+      pause: '\u062a\u0648\u0642\u0641 \u067e\u06cc\u0646\u06af',
+      resume: '\u0627\u062f\u0627\u0645\u0647 \u067e\u06cc\u0646\u06af',
+      pauseShort: '\u0645\u06a9\u062b',
+      resumeShort: '\u0627\u062c\u0631\u0627',
+      statusGood: '\u0639\u0627\u0644\u06cc',
+      statusWarning: '\u0628\u0627\u0644\u0627',
+      statusStable: '\u067e\u0627\u06cc\u062f\u0627\u0631',
+      statusDown: '\u0642\u0637\u0639',
+      statusPaused: '\u0645\u062a\u0648\u0642\u0641',
+      statusUnknown: '\u0646\u0627\u0645\u0634\u062e\u0635',
+      hostNameShortPlaceholder: '\u0646\u0627\u0645 \u0645\u06cc\u0632\u0628\u0627\u0646',
+      hostIpShortPlaceholder: '\u0622\u062f\u0631\u0633 IP \u06cc\u0627 \u062f\u0627\u0645\u0646\u0647',
+      packetLoss: '\u0627\u0641\u062a',
+      profiles: '\u067e\u0631\u0648\u0641\u0627\u06cc\u0644\u200c\u0647\u0627',
+      profileGaming: '\u0628\u0627\u0632\u06cc',
+      profileGamingHint: '\u0645\u0642\u0635\u062f\u0647\u0627\u06cc \u06a9\u0645\u200c\u062a\u0627\u062e\u06cc\u0631 \u0628\u0631\u0627\u06cc \u0628\u0627\u0632\u06cc \u0648 \u0648\u06cc\u0633',
+      profileWork: '\u06a9\u0627\u0631',
+      profileWorkHint: '\u0633\u0631\u0648\u06cc\u0633\u200c\u0647\u0627\u06cc \u062a\u0648\u0633\u0639\u0647 \u0648 \u0628\u0647\u0631\u0647\u200c\u0648\u0631\u06cc',
+      profileStreaming: '\u0627\u0633\u062a\u0631\u06cc\u0645',
+      profileStreamingHint: '\u0633\u0631\u0648\u06cc\u0633\u200c\u0647\u0627\u06cc \u0648\u06cc\u062f\u06cc\u0648 \u0648 \u0631\u0633\u0627\u0646\u0647',
+      profileIran: '\u0627\u06cc\u0631\u0627\u0646',
+      profileIranHint: '\u0633\u0631\u0648\u06cc\u0633\u200c\u0647\u0627\u06cc \u062f\u0627\u062e\u0644\u06cc \u0648 \u062a\u0633\u062a \u0645\u062d\u0644\u06cc',
+      firstRunTitle: '\u06cc\u06a9 \u067e\u0631\u0648\u0641\u0627\u06cc\u0644 \u067e\u0627\u06cc\u0634 \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646\u06cc\u062f',
+      firstRunSkip: '\u0641\u0639\u0644\u0627 \u0631\u062f \u06a9\u0646',
+      dnsPlaceholder: 'example.com',
+      dnsTest: '\u062a\u0633\u062a DNS',
+      dnsTesting: '\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a...',
+      dnsBenchmark: '\u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS',
+      dnsBenchmarking: '\u062f\u0631 \u062d\u0627\u0644 \u0628\u0646\u0686\u0645\u0627\u0631\u06a9...',
+      dnsBenchmarkRounds: '\u062a\u0639\u062f\u0627\u062f \u062f\u0648\u0631',
+      dnsTopFastest: '\u0633\u0631\u06cc\u0639\u200c\u062a\u0631\u06cc\u0646\u200c\u0647\u0627',
+      dnsAverage: '\u0645\u06cc\u0627\u0646\u06af\u06cc\u0646',
+      dnsSuccessRate: '\u0646\u0631\u062e \u0645\u0648\u0641\u0642\u06cc\u062a',
+      dnsInvalid: '\u0644\u0637\u0641\u0627\u064b \u06cc\u06a9 \u062f\u0627\u0645\u0646\u0647 \u0648\u0627\u0631\u062f \u06a9\u0646\u06cc\u062f (\u0645\u062b\u0644\u0627\u064b example.com)',
+      dnsFailed: '\u062a\u0633\u062a DNS \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      dnsBenchmarkDone: '\u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS \u062a\u0645\u0627\u0645 \u0634\u062f',
+      dnsBenchmarkFailed: '\u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      dnsCustomTitle: '\u0627\u0628\u0632\u0627\u0631 DNS \u0633\u0641\u0627\u0631\u0634\u06cc',
+      dnsCustomPlaceholder: '\u0622\u062f\u0631\u0633 DNS (\u0645\u062b\u0644 1.1.1.2)',
+      dnsAddServer: '\u0627\u0641\u0632\u0648\u062f\u0646 DNS',
+      dnsCustomEmpty: 'DNS \u0633\u0641\u0627\u0631\u0634\u06cc \u0627\u06cc \u0627\u0636\u0627\u0641\u0647 \u0646\u0634\u062f\u0647',
+      dnsCustomInvalid: '\u06cc\u06a9 IP \u0645\u0639\u062a\u0628\u0631 \u0628\u0631\u0627\u06cc DNS \u0648\u0627\u0631\u062f \u06a9\u0646\u06cc\u062f',
+      dnsBatchTitle: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0627\u0645\u0646\u0647\u200c\u0647\u0627',
+      dnsBatchPlaceholder: '\u0647\u0631 \u062e\u0637 \u06cc\u06a9 \u062f\u0627\u0645\u0646\u0647 (\u0645\u062b\u0644 youtube.com)',
+      dnsBatchRun: '\u0627\u062c\u0631\u0627\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc',
+      dnsBatchRunning: '\u062f\u0631 \u062d\u0627\u0644 \u0627\u062c\u0631\u0627...',
+      dnsBatchInvalid: '\u062d\u062f\u0627\u0642\u0644 \u06cc\u06a9 \u062f\u0627\u0645\u0646\u0647 \u0645\u0639\u062a\u0628\u0631 \u0648\u0627\u0631\u062f \u06a9\u0646\u06cc\u062f',
+      dnsBatchDone: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc \u062a\u0645\u0627\u0645 \u0634\u062f',
+      dnsBatchFailed: '\u0628\u0631\u0631\u0633\u06cc \u062f\u0633\u062a\u0647\u200c\u0627\u06cc \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      dnsResolved: '\u0642\u0627\u0628\u0644 \u0631\u06cc\u0632\u0627\u0644\u0648',
+      dnsUnresolved: '\u063a\u06cc\u0631\u0642\u0627\u0628\u0644 \u0631\u06cc\u0632\u0627\u0644\u0648',
+      dnsSearchPlaceholder: '\u062c\u0633\u062a\u062c\u0648\u06cc DNS...',
+      dnsSortLatencyAsc: '\u062a\u0627\u062e\u06cc\u0631 (\u06a9\u0645 \u0628\u0647 \u0632\u06cc\u0627\u062f)',
+      dnsSortLatencyDesc: '\u062a\u0627\u062e\u06cc\u0631 (\u0632\u06cc\u0627\u062f \u0628\u0647 \u06a9\u0645)',
+      dnsSortServerAsc: '\u0633\u0631\u0648\u0631 (A-Z)',
+      dnsSortServerDesc: '\u0633\u0631\u0648\u0631 (Z-A)',
+      dnsSortStatus: '\u0648\u0636\u0639\u06cc\u062a',
+      dnsTableServer: '\u0633\u0631\u0648\u0631',
+      dnsTableLatency: '\u062a\u0627\u062e\u06cc\u0631',
+      dnsTableStatus: '\u0648\u0636\u0639\u06cc\u062a',
+      dnsTableActions: '\u0627\u0628\u0632\u0627\u0631',
+      dnsTableEmpty: '\u0646\u062a\u06cc\u062c\u0647\u200c\u0627\u06cc \u067e\u06cc\u062f\u0627 \u0646\u0634\u062f',
+      dnsManagerTitle: '\u0645\u062f\u06cc\u0631 \u0633\u06cc\u0633\u062a\u0645 DNS',
+      dnsManagerAdapter: '\u06a9\u0627\u0631\u062a \u0634\u0628\u06a9\u0647',
+      dnsManagerRefresh: '\u0628\u0631\u0648\u0632\u0631\u0633\u0627\u0646\u06cc',
+      dnsManagerPrimary: 'DNS \u0627\u0635\u0644\u06cc',
+      dnsManagerSecondary: 'DNS \u062f\u0648\u0645 (\u0627\u062e\u062a\u06cc\u0627\u0631\u06cc)',
+      dnsManagerApply: '\u0627\u0639\u0645\u0627\u0644 DNS',
+      dnsManagerReset: '\u0628\u0627\u0632\u06af\u0634\u062a \u0628\u0647 DHCP',
+      dnsManagerNoAdapters: '\u06a9\u0627\u0631\u062a \u0634\u0628\u06a9\u0647\u200c\u0627\u06cc \u06cc\u0627\u0641\u062a \u0646\u0634\u062f',
+      dnsManagerApplied: 'DNS \u0628\u0627 \u0645\u0648\u0641\u0642\u06cc\u062a \u062a\u063a\u06cc\u06cc\u0631 \u06a9\u0631\u062f',
+      dnsManagerResetDone: 'DNS \u0628\u0647 \u062d\u0627\u0644\u062a \u062e\u0648\u062f\u06a9\u0627\u0631 \u0628\u0631\u06af\u0634\u062a',
+      dnsManagerFailed: '\u062a\u063a\u06cc\u06cc\u0631 DNS \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062f',
+      dnsRecommendation: 'DNS \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc',
+      dnsApplyRecommended: '\u0627\u0639\u0645\u0627\u0644 DNS \u067e\u06cc\u0634\u0646\u0647\u0627\u062f\u06cc',
+      dnsRecommendationEmpty: '\u0627\u0648\u0644 \u062a\u0633\u062a \u06cc\u0627 \u0628\u0646\u0686\u0645\u0627\u0631\u06a9 DNS \u0631\u0627 \u0627\u062c\u0631\u0627 \u06a9\u0646\u06cc\u062f',
+      dnsRollback: '\u0628\u0627\u0632\u06af\u0631\u062f\u0627\u0646\u06cc DNS',
+      dnsRollbackDone: '\u0628\u0627\u0632\u06af\u0631\u062f\u0627\u0646\u06cc DNS \u0627\u0646\u062c\u0627\u0645 \u0634\u062f',
+      adapterCurrentDns: 'DNS \u0641\u0639\u0644\u06cc',
+      adapterIpv4: 'IPv4',
+      adapterGateway: '\u06af\u06cc\u062a\u200c\u0648\u06cc',
+      adapterStatus: '\u0648\u0636\u0639\u06cc\u062a',
+      usable: '\u0642\u0627\u0628\u0644 \u0627\u0633\u062a\u0641\u0627\u062f\u0647',
+      blocked: '\u0645\u0633\u062f\u0648\u062f \u0634\u062f\u0647',
+      failed: '\u0646\u0627\u0645\u0648\u0641\u0642',
+      speedDownload: '\u0633\u0631\u0639\u062a \u062f\u0627\u0646\u0644\u0648\u062f',
+      speedUpload: '\u0633\u0631\u0639\u062a \u0622\u067e\u0644\u0648\u062f',
+      speedLatency: '\u062a\u0627\u062e\u06cc\u0631',
+      speedJitter: '\u0646\u0648\u0633\u0627\u0646',
+      speedStart: '\u0634\u0631\u0648\u0639',
+      speedStop: '\u062a\u0648\u0642\u0641',
+      speedPhaseIdle: '\u0622\u0645\u0627\u062f\u0647',
+      speedPhaseDownload: '\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a \u062f\u0627\u0646\u0644\u0648\u062f',
+      speedPhaseUpload: '\u062f\u0631 \u062d\u0627\u0644 \u062a\u0633\u062a \u0622\u067e\u0644\u0648\u062f',
+      speedPhaseFinal: '\u067e\u0627\u06cc\u0627\u0646 \u062a\u0633\u062a',
+      speedProviderTitle: '\u0633\u0631\u0648\u06cc\u0633',
+      speedProviderCloudflare: 'Cloudflare',
+      speedProviderHetzner: 'Hetzner',
+      speedOverview: '\u062e\u0644\u0627\u0635\u0647 \u0627\u062a\u0635\u0627\u0644',
+      speedPublicIp: '\u0622\u06cc\u200c\u067e\u06cc \u0639\u0645\u0648\u0645\u06cc',
+      speedQuality: '\u06a9\u06cc\u0641\u06cc\u062a',
+      speedQualityReady: '\u062a\u0633\u062a \u0646\u0634\u062f\u0647',
+      speedQualityGreat: '\u0639\u0627\u0644\u06cc',
+      speedQualityStable: '\u067e\u0627\u06cc\u062f\u0627\u0631',
+      speedQualityUnstable: '\u0646\u0627\u067e\u0627\u06cc\u062f\u0627\u0631',
+      speedNote: '\u0646\u06a9\u062a\u0647 : \u0627\u06af\u0631 \u0627\u0632 \u0627\u0628\u0632\u0627\u0631 \u0647\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u0622\u06cc\u067e\u06cc \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0645\u06cc\u06a9\u0646\u06cc\u062f \u0628\u0631\u0627\u06cc \u0646\u0645\u0627\u06cc\u0634 \u062a\u063a\u06cc\u06cc\u0631\u0627\u062a \u06af\u0632\u06cc\u0646\u0647 \u062a\u0648\u0646\u0644 \u0631\u0648 \u062f\u0631 \u062a\u0646\u0638\u06cc\u0645\u0627\u062a \u0627\u0628\u0632\u0627\u0631 \u0631\u0648\u0634\u0646 \u06a9\u0646\u06cc\u062f',
+      aboutProductLabel: '\u0645\u062d\u0635\u0648\u0644',
+      aboutVersionLabel: '\u0648\u0631\u0698\u0646',
+      aboutDeveloperLabel: '\u062a\u0648\u0633\u0639\u0647\u200c\u062f\u0647\u0646\u062f\u0647',
+      aboutContactLabel: '\u0627\u0631\u062a\u0628\u0627\u0637',
+      aboutDevTitle: '\u062a\u0648\u0633\u0639\u0647\u200c\u062f\u0647\u0646\u062f\u0647\u0654 PulseNet',
+      aboutDevLine1: '\u0627\u06cc\u0646 \u0628\u0631\u0646\u0627\u0645\u0647 \u0631\u0627',
+      aboutDevLine2: '\u0628\u0631\u0627\u06cc \u0627\u0631\u062a\u0628\u0627\u0637 \u06cc\u0627 \u062f\u06cc\u062f\u0646 \u067e\u0631\u0648\u0698\u0647\u200c\u0647\u0627\u06cc \u0628\u06cc\u0634\u062a\u0631، \u0628\u0647 \u0635\u0641\u062d\u0647\u0654 GitHub \u0632\u06cc\u0631 \u0633\u0631 \u0628\u0632\u0646\u06cc\u062f:',
+      aboutGithubLink: '\u0645\u0634\u0627\u0647\u062f\u0647 \u062f\u0631 GitHub',
+      dragToReorder: '\u062c\u0627\u0628\u062c\u0627\u06cc\u06cc \u0628\u0631\u0627\u06cc \u062a\u063a\u06cc\u06cc\u0631 \u062a\u0631\u062a\u06cc\u0628',
+      dragPreviewMove: '\u062c\u0627\u0628\u062c\u0627\u06cc\u06cc',
+      reorderHint: '\u062d\u0627\u0644\u062a \u062a\u0631\u062a\u06cc\u0628\u200c\u062f\u0647\u06cc \u0641\u0639\u0627\u0644 \u0627\u0633\u062a: \u06a9\u0627\u0631\u062a\u200c\u0647\u0627 \u0631\u0627 \u0628\u06a9\u0634\u06cc\u062f \u0648 \u0628\u0627 \u00d7 \u062d\u0630\u0641 \u06a9\u0646\u06cc\u062f.',
+      deleteTitle: (label) => `\u062d\u0630\u0641 ${label}`,
+    };
+    return isPersian ? fa : en;
+  }, [isPersian]);
+
+  const bandwidthRulesByPath = useMemo(() => {
+    const entries = (bandwidthLimiterState.rules || []).map((rule) => [
+      normalizeLimiterPath(rule.executablePath),
+      rule,
+    ]);
+    return new Map(entries);
+  }, [bandwidthLimiterState.rules]);
+
+  const networkControlIsWindows = bandwidthLimiterState.engine?.platform === 'windows';
+
+  const handleToggleApplicationBlock = useCallback(async (process) => {
+    const executablePath = (process?.paths || [])[0] || '';
+    if (!executablePath) {
+      setBandwidthLimitFeedback(texts.limiterNoPath);
+      return;
+    }
+    const existing = bandwidthRulesByPath.get(normalizeLimiterPath(executablePath));
+    setBandwidthLimitSaving(true);
+    setBandwidthLimitFeedback('');
+    try {
+      const result = existing?.blocked
+        ? await invoke('remove_bandwidth_limit_rule', { executablePath })
+        : await invoke('upsert_bandwidth_limit_rule', {
+          rule: {
+            executablePath,
+            processName: process.name,
+            downloadLimitBps: null,
+            uploadLimitBps: null,
+            blocked: true,
+            enabled: true,
+          },
+        });
+      setBandwidthLimiterState({ engine: result?.engine || null, rules: result?.rules || [] });
+      setBandwidthLimitFeedback(existing?.blocked ? texts.limiterRemoved : texts.limiterBlockSaved);
+    } catch (error) {
+      setBandwidthLimitFeedback(String(error || 'network-control-update-failed'));
+    } finally {
+      setBandwidthLimitSaving(false);
+    }
+  }, [bandwidthRulesByPath, texts.limiterBlockSaved, texts.limiterNoPath, texts.limiterRemoved]);
+
+  const openBandwidthLimitModal = useCallback((process) => {
+    const executablePath = (process?.paths || [])[0] || '';
+    if (!executablePath) {
+      setBandwidthLimitFeedback(texts.limiterNoPath);
+      return;
+    }
+    const existing = bandwidthRulesByPath.get(normalizeLimiterPath(executablePath));
+    const factor = BANDWIDTH_UNIT_FACTORS.mbps;
+    const inputValue = (value) => {
+      if (!value) return '';
+      return String(Number((Number(value) / factor).toFixed(3)));
+    };
+    setBandwidthLimitForm({
+      download: inputValue(existing?.downloadLimitBps),
+      upload: inputValue(existing?.uploadLimitBps),
+      unit: 'mbps',
+      blocked: Boolean(existing?.blocked),
+    });
+    setBandwidthLimitFeedback('');
+    setBandwidthLimitModalProcess({ ...process, executablePath, existingRule: existing || null });
+  }, [bandwidthRulesByPath, texts.limiterNoPath]);
+
+  const closeBandwidthLimitModal = useCallback(() => {
+    if (bandwidthLimitSaving) return;
+    setBandwidthLimitModalProcess(null);
+    setBandwidthLimitFeedback('');
+  }, [bandwidthLimitSaving]);
+
+  const handleBandwidthLimitUnitChange = useCallback((nextUnit) => {
+    setBandwidthLimitForm((current) => {
+      const currentFactor = BANDWIDTH_UNIT_FACTORS[current.unit] || BANDWIDTH_UNIT_FACTORS.mbps;
+      const nextFactor = BANDWIDTH_UNIT_FACTORS[nextUnit] || BANDWIDTH_UNIT_FACTORS.mbps;
+      const convert = (value) => {
+        if (value === '') return '';
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return value;
+        return String(Number(((parsed * currentFactor) / nextFactor).toFixed(3)));
+      };
+      return {
+        download: convert(current.download),
+        upload: convert(current.upload),
+        unit: nextUnit,
+        blocked: current.blocked,
+      };
+    });
+  }, []);
+
+  const handleSaveBandwidthLimit = useCallback(async () => {
+    if (!bandwidthLimitModalProcess) return;
+    const factor = BANDWIDTH_UNIT_FACTORS[bandwidthLimitForm.unit] || BANDWIDTH_UNIT_FACTORS.mbps;
+    const toBitsPerSecond = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * factor) : null;
+    };
+    const downloadLimitBps = toBitsPerSecond(bandwidthLimitForm.download);
+    const uploadLimitBps = toBitsPerSecond(bandwidthLimitForm.upload);
+    if (!bandwidthLimitForm.blocked && !downloadLimitBps && !uploadLimitBps) {
+      setBandwidthLimitFeedback(texts.limiterRequired);
+      return;
+    }
+
+    setBandwidthLimitSaving(true);
+    setBandwidthLimitFeedback('');
+    try {
+      const result = await invoke('upsert_bandwidth_limit_rule', {
+        rule: {
+          executablePath: bandwidthLimitModalProcess.executablePath,
+          processName: bandwidthLimitModalProcess.name,
+          downloadLimitBps,
+          uploadLimitBps,
+          blocked: bandwidthLimitForm.blocked,
+          enabled: true,
+        },
+      });
+      setBandwidthLimiterState({ engine: result?.engine || null, rules: result?.rules || [] });
+      setBandwidthLimitModalProcess(null);
+      setBandwidthLimitFeedback(texts.limiterSaved);
+    } catch (error) {
+      setBandwidthLimitFeedback(String(error || 'bandwidth-limit-save-failed'));
+    } finally {
+      setBandwidthLimitSaving(false);
+    }
+  }, [bandwidthLimitForm, bandwidthLimitModalProcess, texts.limiterRequired, texts.limiterSaved]);
+
+  const handleRemoveBandwidthLimit = useCallback(async () => {
+    if (!bandwidthLimitModalProcess?.executablePath) return;
+    setBandwidthLimitSaving(true);
+    setBandwidthLimitFeedback('');
+    try {
+      const result = await invoke('remove_bandwidth_limit_rule', {
+        executablePath: bandwidthLimitModalProcess.executablePath,
+      });
+      setBandwidthLimiterState({ engine: result?.engine || null, rules: result?.rules || [] });
+      setBandwidthLimitModalProcess(null);
+      setBandwidthLimitFeedback(texts.limiterRemoved);
+    } catch (error) {
+      setBandwidthLimitFeedback(String(error || 'bandwidth-limit-remove-failed'));
+    } finally {
+      setBandwidthLimitSaving(false);
+    }
+  }, [bandwidthLimitModalProcess, texts.limiterRemoved]);
+
+
+
+
+
+  const statusTexts = useMemo(() => {
+    const en = {
+      needAdmin: IS_LINUX_RUNTIME ? 'ICMP Permission' : 'Need Admin',
+      error: 'Error',
+      noResponse: 'No Response',
+      ipcError: 'IPC Error',
+      paused: 'Paused',
+    };
+    const fa = {
+      needAdmin: IS_LINUX_RUNTIME ? '\u0645\u062c\u0648\u0632 ICMP' : '\u0646\u06cc\u0627\u0632 \u0628\u0647 \u062f\u0633\u062a\u0631\u0633\u06cc \u0627\u062f\u0645\u06cc\u0646',
+      error: '\u062e\u0637\u0627',
+      noResponse: '\u0628\u062f\u0648\u0646 \u067e\u0627\u0633\u062e',
+      ipcError: '\u062e\u0637\u0627\u06cc IPC',
+      paused: '\u0645\u062a\u0648\u0642\u0641',
+    };
+    return isPersian ? fa : en;
+  }, [isPersian]);
+
+  const dnsSortOptions = useMemo(() => ([
+    { value: 'latency-asc', label: texts.dnsSortLatencyAsc },
+    { value: 'latency-desc', label: texts.dnsSortLatencyDesc },
+    { value: 'server-asc', label: texts.dnsSortServerAsc },
+    { value: 'server-desc', label: texts.dnsSortServerDesc },
+    { value: 'status-asc', label: texts.dnsSortStatus },
+  ]), [texts]);
+
+  const networkProcessSortOptions = useMemo(() => ([
+    { value: 'connections-desc', label: texts.networkSortMostConnections },
+    { value: 'connections-asc', label: texts.networkSortFewestConnections },
+    { value: 'limited-first', label: texts.networkSortLimitedFirst },
+    { value: 'name-asc', label: texts.networkSortNameAsc },
+    { value: 'name-desc', label: texts.networkSortNameDesc },
+  ]), [texts]);
+
+  const bandwidthUnitOptions = useMemo(() => ([
+    { value: 'kbps', label: texts.limiterKbps },
+    { value: 'mbps', label: texts.limiterMbps },
+    { value: 'kbytes', label: texts.limiterKBps },
+    { value: 'mbytes', label: texts.limiterMBps },
+  ]), [texts]);
+
+  const speedPhaseLabel = useMemo(() => {
+    if (speedPhase === 'download') return texts.speedPhaseDownload;
+    if (speedPhase === 'upload') return texts.speedPhaseUpload;
+    if (speedPhase === 'final') return texts.speedPhaseFinal;
+    return texts.speedPhaseIdle;
+  }, [speedPhase, texts]);
+
+  const speedQuality = useMemo(() => {
+    if (!speedMetrics) {
+      return { label: texts.speedQualityReady, tone: 'neutral' };
+    }
+
+    const latency = Number(speedMetrics.latencyMs);
+    const jitter = Number(speedMetrics.jitterMs);
+    if (Number.isFinite(latency) && Number.isFinite(jitter) && latency <= 60 && jitter <= 20) {
+      return { label: texts.speedQualityGreat, tone: 'good' };
+    }
+    if (Number.isFinite(latency) && Number.isFinite(jitter) && latency <= 130 && jitter <= 45) {
+      return { label: texts.speedQualityStable, tone: 'warning' };
+    }
+    return { label: texts.speedQualityUnstable, tone: 'bad' };
+  }, [speedMetrics, texts]);
+
+  const networkUsageStats = useMemo(() => {
+    const current = networkSnapshot;
+    const previous = previousNetworkSnapshot;
+    if (!current) {
+      return {
+        downloadRate: 0,
+        uploadRate: 0,
+        totalReceived: 0,
+      totalSent: 0,
+      adapters: [],
+      processes: [],
+      applicationUsage: [],
+      applicationDownloadTotal: 0,
+      maxAdapterRate: 0,
+      activeAdapters: 0,
+      activeProcesses: 0,
+      processGroups: [],
+    };
+  }
+
+    const elapsedSeconds = previous
+      ? Math.max(0.5, (Number(current.timestampMs) - Number(previous.timestampMs)) / 1000)
+      : 0;
+    const previousAdapters = new Map((previous?.adapters || []).map((adapter) => [adapter.name, adapter]));
+    const adapters = (current.adapters || []).map((adapter) => {
+      const previousAdapter = previousAdapters.get(adapter.name);
+      const receivedDelta = previousAdapter ? Math.max(0, Number(adapter.receivedBytes || 0) - Number(previousAdapter.receivedBytes || 0)) : 0;
+      const sentDelta = previousAdapter ? Math.max(0, Number(adapter.sentBytes || 0) - Number(previousAdapter.sentBytes || 0)) : 0;
+      return {
+        ...adapter,
+        downloadRate: elapsedSeconds ? receivedDelta / elapsedSeconds : 0,
+        uploadRate: elapsedSeconds ? sentDelta / elapsedSeconds : 0,
+      };
+    }).sort((left, right) => (right.downloadRate + right.uploadRate) - (left.downloadRate + left.uploadRate));
+
+    const receivedDelta = previous ? Math.max(0, Number(current.receivedBytes || 0) - Number(previous.receivedBytes || 0)) : 0;
+    const sentDelta = previous ? Math.max(0, Number(current.sentBytes || 0) - Number(previous.sentBytes || 0)) : 0;
+
+    const applicationRows = (current.applications || [])
+      .map((application, index) => ({
+        ...application,
+        id: application.path || `${application.name || 'unknown'}-${index}`,
+        name: String(application.name || 'Unknown'),
+        downloadBytes: Math.max(0, Number(application.downloadBytes || 0)),
+      }))
+      .filter((application) => application.downloadBytes > 0)
+      .sort((left, right) => right.downloadBytes - left.downloadBytes);
+    const applicationDownloadTotal = applicationRows.reduce(
+      (total, application) => total + application.downloadBytes,
+      0
+    );
+    const primaryApplications = applicationRows.slice(0, 5);
+    const otherDownloadBytes = applicationRows
+      .slice(5)
+      .reduce((total, application) => total + application.downloadBytes, 0);
+    if (otherDownloadBytes > 0) {
+      primaryApplications.push({
+        id: 'other-applications',
+        name: texts.networkAppDownloadOther,
+        path: '',
+        iconDataUrl: '',
+        downloadBytes: otherDownloadBytes,
+      });
+    }
+    const applicationUsage = buildNetworkDownloadSegments(primaryApplications).map((application, index) => ({
+      ...application,
+      color: NETWORK_DOWNLOAD_CHART_COLORS[index % NETWORK_DOWNLOAD_CHART_COLORS.length],
+    }));
+
+    const processMap = new Map();
+    for (const process of current.processes || []) {
+      const category = getNetworkProcessCategory(process);
+      const normalizedName = String(process.name || 'Unknown').trim() || 'Unknown';
+      const groupKey = shouldGroupNetworkProcess(process)
+        ? `${category}:${normalizedName.toLowerCase()}`
+        : `${category}:${normalizedName.toLowerCase()}:${process.pid}`;
+      const existing = processMap.get(groupKey) || {
+        id: groupKey,
+        name: normalizedName,
+        category,
+        connections: 0,
+        pids: [],
+        paths: [],
+        icons: [],
+        remoteAddresses: [],
+        grouped: false,
+      };
+      existing.connections += Number(process.connections || 0);
+      if (process.pid) existing.pids.push(process.pid);
+      if (process.path && !existing.paths.includes(process.path)) existing.paths.push(process.path);
+      if (process.iconDataUrl && !existing.icons.includes(process.iconDataUrl)) existing.icons.push(process.iconDataUrl);
+      for (const remote of process.remoteAddresses || []) {
+        if (remote && !existing.remoteAddresses.includes(remote)) existing.remoteAddresses.push(remote);
+      }
+      existing.grouped = existing.grouped || shouldGroupNetworkProcess(process);
+      processMap.set(groupKey, existing);
+    }
+
+    const query = networkProcessSearch.trim().toLowerCase();
+    const categoryLabels = {
+      browsers: texts.networkCategoryBrowsers,
+      apps: texts.networkCategoryApps,
+      unknown: texts.networkCategoryUnknown,
+      system: texts.networkCategorySystem,
+    };
+    const statusLabels = {
+      high: texts.networkStatusHigh,
+      normal: texts.networkStatusNormal,
+      idle: texts.networkStatusIdle,
+    };
+    const displayProcesses = [...processMap.values()]
+      .map((process) => {
+        const connections = Number(process.connections || 0);
+        const status = getNetworkProcessStatus(connections);
+        const pids = [...new Set(process.pids)].sort((left, right) => Number(left) - Number(right));
+        const remoteAddresses = [...new Set(process.remoteAddresses)].slice(0, 8);
+        const icons = [...new Set(process.icons || [])];
+        const hasBandwidthLimit = hasActiveBandwidthLimit(process.paths, bandwidthRulesByPath);
+        return {
+          ...process,
+          connections,
+          pids,
+          remoteAddresses,
+          icons,
+          iconDataUrl: icons[0] || '',
+          hasBandwidthLimit,
+          status,
+          statusLabel: statusLabels[status],
+          categoryLabel: categoryLabels[process.category],
+          searchText: [
+            process.name,
+            process.category,
+            categoryLabels[process.category],
+            status,
+            statusLabels[status],
+            ...pids.map(String),
+            ...remoteAddresses,
+            ...process.paths,
+          ].join(' ').toLowerCase(),
+        };
+      })
+      .filter((process) => !query || process.searchText.includes(query))
+      .sort((left, right) => compareNetworkProcesses(networkProcessSort, left, right));
+
+    const processGroups = [
+      {
+        category: 'main',
+        label: texts.networkCategoryMain,
+        processes: displayProcesses.filter((process) => process.category !== 'system'),
+      },
+      {
+        category: 'system',
+        label: texts.networkCategorySystem,
+        processes: displayProcesses.filter((process) => process.category === 'system'),
+      },
+    ]
+      .filter((group) => group.processes.length > 0);
+
+    return {
+      downloadRate: elapsedSeconds ? receivedDelta / elapsedSeconds : 0,
+      uploadRate: elapsedSeconds ? sentDelta / elapsedSeconds : 0,
+      totalReceived: Number(current.receivedBytes || 0),
+      totalSent: Number(current.sentBytes || 0),
+      adapters,
+      maxAdapterRate: adapters.reduce((max, adapter) => Math.max(max, Number(adapter.downloadRate || 0) + Number(adapter.uploadRate || 0)), 0),
+      activeAdapters: adapters.filter((adapter) => (Number(adapter.downloadRate || 0) + Number(adapter.uploadRate || 0)) > 0).length,
+      activeProcesses: displayProcesses.filter((process) => Number(process.connections || 0) > 0).length,
+      processes: displayProcesses,
+      processGroups,
+      applicationUsage,
+      applicationDownloadTotal,
+    };
+  }, [bandwidthRulesByPath, networkSnapshot, previousNetworkSnapshot, networkProcessSearch, networkProcessSort, texts]);
+
+  const visibleNetworkProcessGroups = useMemo(() => {
+    if (showAllNetworkProcesses) {
+      return networkUsageStats.processGroups;
+    }
+
+    let remaining = NETWORK_PROCESS_PREVIEW_LIMIT;
+    return networkUsageStats.processGroups
+      .map((group) => {
+        const processes = group.processes.slice(0, Math.max(0, remaining));
+        remaining -= processes.length;
+        return { ...group, processes };
+      })
+      .filter((group) => group.processes.length > 0);
+  }, [networkUsageStats.processGroups, showAllNetworkProcesses]);
+
+  const visibleNetworkProcessCount = visibleNetworkProcessGroups.reduce(
+    (total, group) => total + group.processes.length,
+    0
+  );
+  const canToggleNetworkProcesses = networkUsageStats.processes.length > NETWORK_PROCESS_PREVIEW_LIMIT;
+  const hiddenNetworkProcessCount = Math.max(0, networkUsageStats.processes.length - visibleNetworkProcessCount);
+  const highlightedNetworkApplication = networkUsageStats.applicationUsage.find(
+    (application) => application.id === hoveredNetworkApplicationId
+  ) || networkUsageStats.applicationUsage[0] || null;
+
+  useEffect(() => {
+    setShowAllNetworkProcesses(false);
+    localStorage.setItem('networkProcessSort', networkProcessSort);
+  }, [networkProcessSearch, networkProcessSort]);
+
+  const pageTitle = useMemo(() => {
+    if (currentPage === 'dns') return texts.dnsChecker;
+    if (currentPage === 'speed') return texts.speedTest;
+    if (currentPage === 'network') return texts.networkUsage;
+    if (currentPage === 'log') return texts.alerts;
+    if (currentPage === 'about') return texts.about;
+    if (currentPage === 'settings') return texts.settings;
+    return 'PulseNet';
+  }, [currentPage, texts]);
+
+  useEffect(() => {
+    const status = `${pageTitle} • IP ${publicNetworkInfo.ip || 'N/A'} ${publicNetworkInfo.country && publicNetworkInfo.country !== 'N/A' ? `(${publicNetworkInfo.country})` : ''}`;
+    invoke('set_tray_status', { status }).catch(() => {});
+  }, [pageTitle, publicNetworkInfo]);
+
+  const logFilterOptions = useMemo(() => ([
+    { value: 'all', label: texts.logAll },
+    { value: 'speed', label: texts.logSpeed },
+    { value: 'alert', label: texts.logAlerts },
+    { value: 'dns', label: texts.logDns },
+    { value: 'network', label: texts.logNetwork },
+    { value: 'action', label: texts.logAction },
+  ]), [texts]);
+
+  const getLogTypeLabel = useCallback((type) => (
+    logFilterOptions.find((option) => option.value === type)?.label || texts.logDns
+  ), [logFilterOptions, texts]);
+
+  const filteredLogs = useMemo(() => {
+    const now = Date.now();
+    const query = logSearch.trim().toLowerCase();
+    return logEntries.filter((entry) => {
+      if (logFilter !== 'all' && entry.type !== logFilter) return false;
+      if (logDateFilter === 'today' && now - Number(entry.time || 0) > 24 * 60 * 60 * 1000) return false;
+      if (logDateFilter === 'week' && now - Number(entry.time || 0) > 7 * 24 * 60 * 60 * 1000) return false;
+      if (!query) return true;
+      return [entry.title, entry.detail, entry.type].some((value) => String(value || '').toLowerCase().includes(query));
+    });
+  }, [logEntries, logFilter, logDateFilter, logSearch]);
+
+  useEffect(() => {
+    localStorage.setItem('logEntries', JSON.stringify(logEntries.slice(0, 200)));
+  }, [logEntries]);
+
+  const formatLogTime = useCallback((timestamp) => {
+    try {
+      return new Date(timestamp).toLocaleString(isPersian ? 'fa-IR' : 'en-US');
+    } catch {
+      return '';
+    }
+  }, [isPersian]);
+
+  const logStats = useMemo(() => {
+    const latest = logEntries[0] || null;
+    return {
+      total: logEntries.length,
+      visible: filteredLogs.length,
+      latestTitle: latest ? latest.title : texts.logNoLatest,
+      latestTime: latest ? formatLogTime(latest.time) : '',
+    };
+  }, [filteredLogs.length, formatLogTime, logEntries, texts]);
+
+  const downloadTextFile = useCallback((filename, content, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleExportLogsJson = () => {
+    if (!filteredLogs.length) return;
+    const payload = JSON.stringify(filteredLogs, null, 2);
+    downloadTextFile(`pulsenet-logs-${Date.now()}.json`, payload, 'application/json;charset=utf-8');
+  };
+
+  const handleExportLogsCsv = () => {
+    if (!filteredLogs.length) return;
+    const escapeCsv = (value) => {
+      const asText = String(value ?? '');
+      return `"${asText.replace(/"/g, '""')}"`;
+    };
+    const header = ['id', 'type', 'title', 'detail', 'time', 'displayTime'].join(',');
+    const rows = filteredLogs.map((entry) => {
+      return [
+        escapeCsv(entry.id),
+        escapeCsv(entry.type),
+        escapeCsv(entry.title),
+        escapeCsv(entry.detail),
+        escapeCsv(entry.time),
+        escapeCsv(formatLogTime(entry.time)),
+      ].join(',');
+    });
+    downloadTextFile(
+      `pulsenet-logs-${Date.now()}.csv`,
+      `${header}\n${rows.join('\n')}`,
+      'text/csv;charset=utf-8'
+    );
+  };
+
+  const handleExportSettings = () => {
+    const payload = {
+      version: 1,
+      allHosts,
+      activeProfile,
+      pingIntervalMs,
+      optimizationEnabled,
+      compactMode,
+      customDnsServers,
+      dnsBenchmarkRounds,
+      speedProvider,
+      showPublicIp,
+      closeAction,
+      betaUpdates,
+      autoCheckUpdates,
+      displayName,
+      locale: isPersian ? 'fa' : 'en',
+    };
+    downloadTextFile(`pulsenet-settings-${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+  };
+
+  const handleImportSettingsClick = () => {
+    importSettingsInputRef.current?.click();
+  };
+
+  const handleImportSettingsFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.version !== 1) throw new Error('invalid-settings');
+      if (Array.isArray(parsed.allHosts)) {
+        setAllHosts(parsed.allHosts);
+        localStorage.setItem('allHosts', JSON.stringify(parsed.allHosts));
+      }
+      if (parsed.activeProfile) setActiveProfile(parsed.activeProfile);
+      if (Number.isFinite(Number(parsed.pingIntervalMs))) setPingIntervalMs(Number(parsed.pingIntervalMs));
+      if (typeof parsed.optimizationEnabled === 'boolean') setOptimizationEnabled(parsed.optimizationEnabled);
+      if (typeof parsed.compactMode === 'boolean') setCompactMode(parsed.compactMode);
+      if (Array.isArray(parsed.customDnsServers)) setCustomDnsServers(parsed.customDnsServers.map((item) => String(item).trim()).filter(Boolean));
+      if (Number.isFinite(Number(parsed.dnsBenchmarkRounds))) setDnsBenchmarkRounds(Math.min(10, Math.max(1, Number(parsed.dnsBenchmarkRounds))));
+      if (parsed.speedProvider) setSpeedProvider(parsed.speedProvider);
+      if (typeof parsed.showPublicIp === 'boolean') setShowPublicIp(parsed.showPublicIp);
+      if (parsed.closeAction) setCloseAction(parsed.closeAction);
+      if (typeof parsed.betaUpdates === 'boolean') setBetaUpdates(parsed.betaUpdates);
+      if (typeof parsed.autoCheckUpdates === 'boolean') setAutoCheckUpdates(parsed.autoCheckUpdates);
+      if (parsed.displayName) {
+        setDisplayName(parsed.displayName);
+        setNameInput(parsed.displayName);
+        localStorage.setItem('displayName', parsed.displayName);
+      }
+      if (parsed.locale === 'fa' || parsed.locale === 'en') {
+        setIsPersian(parsed.locale === 'fa');
+        localStorage.setItem('locale', parsed.locale);
+      }
+      addLogEntry({ type: 'action', title: texts.settingsImportDone, detail: file.name });
+    } catch (error) {
+      console.error('Failed to import settings:', error);
+      addLogEntry({ type: 'alert', title: texts.settingsImportFailed, detail: file.name });
+    }
+  };
+
+  const handleOpenDeveloperGithub = useCallback((event) => {
+    event.preventDefault();
+    openUrl('https://github.com/SM8KE1');
+  }, []);
+
+
+
+
+
+
+
+  return (
+    <div className={`app-shell ${isSortingHosts ? 'sorting-active' : ''} ${compactMode ? 'compact' : ''} ${isWindowMaximized ? 'maximized' : ''}`}>
+      <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+        <div className="sidebar-header">
+          <button
+            type="button"
+            className="sidebar-team sidebar-team-clickable"
+            onClick={() => setCurrentPage('about')}
+            aria-label="Open About"
+          >
+            <div className="sidebar-team-logo">
+              <img src={iconIco} alt="PulseNet" className="sidebar-team-icon" />
+            </div>
+            <div className="sidebar-team-info">
+              <div className="sidebar-team-name">PulseNet</div>
+              <div className="sidebar-team-plan">
+                {currentPage === 'ping'
+                  ? texts.monitoring
+                  : currentPage === 'dns'
+                    ? texts.dnsChecker
+                    : currentPage === 'speed'
+                      ? texts.speedTest
+                      : currentPage === 'network'
+                        ? texts.networkUsage
+                        : currentPage === 'log'
+                          ? texts.alerts
+                          : currentPage === 'about'
+                            ? texts.about
+                            : texts.settings}
+              </div>
+            </div>
+            <span className="sidebar-team-about-icon" aria-hidden="true">
+              <img src={aboutIcon} alt="" className="sidebar-team-about-icon-img" />
+            </span>
+          </button>
+          <button className="sidebar-collapse" onClick={toggleSidebarCollapse} aria-label="Toggle sidebar">
+            <span className="collapse-line"></span>
+            <span className="collapse-line"></span>
+          </button>
+        </div>
+        <div className="sidebar-content">
+          <div className="sidebar-group">
+            <div className="sidebar-group-label">{texts.platform}</div>
+            <div className="sidebar-menu">
+              <button
+                className={`sidebar-item ${currentPage === 'ping' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('ping')}
+                data-tooltip={texts.ping}
+                aria-label={texts.ping}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={pingIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.ping}</span>
+              </button>
+              <button
+                className={`sidebar-item ${currentPage === 'dns' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('dns')}
+                data-tooltip={texts.dnsChecker}
+                aria-label={texts.dnsChecker}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={dnsIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.dnsChecker}</span>
+              </button>
+              <button
+                className={`sidebar-item ${currentPage === 'speed' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('speed')}
+                data-tooltip={texts.speedTest}
+                aria-label={texts.speedTest}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={speedIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.speedTest}</span>
+              </button>
+              <button
+                className={`sidebar-item ${currentPage === 'network' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('network')}
+                data-tooltip={texts.networkUsage}
+                aria-label={texts.networkUsage}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={nusageIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.networkUsage}</span>
+              </button>
+              <button
+                className={`sidebar-item ${currentPage === 'log' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('log')}
+                data-tooltip={texts.alerts}
+                aria-label={texts.alerts}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={logIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.alerts}</span>
+              </button>
+              <button
+                className={`sidebar-item ${currentPage === 'settings' ? 'active' : ''}`}
+                onClick={() => setCurrentPage('settings')}
+                data-tooltip={texts.settings}
+                aria-label={texts.settings}
+              >
+                <span className="sidebar-item-icon" aria-hidden="true">
+                  <img src={settingIcon} alt="" className="sidebar-item-icon-img" />
+                </span>
+                <span className="sidebar-item-text">{texts.settings}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="sidebar-footer">
+          <div className="sidebar-user">
+            <div className="sidebar-user-avatar">{getInitials(displayName || 'User')}</div>
+            <div className="sidebar-user-info">
+              {isEditingName ? (
+                <div className="sidebar-user-edit">
+                  <input
+                    className="sidebar-name-input"
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveName();
+                      if (e.key === 'Escape') handleCancelName();
+                    }}
+                    autoFocus
+                  />
+                  <div className="sidebar-name-actions">
+                    <button className="sidebar-name-button" onClick={handleSaveName}>
+                      OK
+                    </button>
+                    <button className="sidebar-name-button ghost" onClick={handleCancelName}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="sidebar-user-name-row">
+                  <div className="sidebar-user-name">{displayName || 'User'}</div>
+                  <button className="sidebar-name-edit" onClick={handleEditName} aria-label="Edit name">
+                    <PencilIcon />
+                  </button>
+                </div>
+              )}
+              {appVersion && (
+                <div className="sidebar-user-version">v{appVersion}</div>
+              )}
+            </div>
+            <button
+              type="button"
+              className="sidebar-gift-button"
+              onClick={handleDonateClick}
+              data-tooltip={isPersian ? 'حمایت از پروژه' : 'Support PulseNet'}
+              aria-label="Open gift link"
+            >
+              <GiftIcon />
+            </button>
+            {showDonateNudge && (
+              <div className={`sidebar-donate-nudge ${isPersian ? 'rtl' : ''}`} role="status" aria-live="polite">
+                <button
+                  type="button"
+                  className="sidebar-donate-close"
+                  onClick={() => setShowDonateNudge(false)}
+                  aria-label={isPersian ? 'بستن پیام حمایت' : 'Close support message'}
+                >
+                  ×
+                </button>
+                <strong>{isPersian ? 'حمایت از PulseNet' : 'Support PulseNet'}</strong>
+                <span>
+                  {isPersian
+                    ? 'اگر برنامه به کارت اومد، می‌تونی توسعه‌اش رو حمایت کنی.'
+                    : 'If PulseNet helps, you can support its development.'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+      <div className="titlebar">
+        <div className="titlebar-left">
+          <img src={iconIco} alt="PulseNet" className="app-icon" />
+          <div className="titlebar-title">PulseNet</div>
+        </div>
+        <div className="titlebar-controls">
+          <button type="button" className="titlebar-button minimize" id="minimize-button" aria-label="Minimize">&#x2212;</button>
+          <button
+            type="button"
+            className="titlebar-button maximize"
+            id="maximize-button"
+            aria-label={isWindowMaximized ? 'Restore window' : 'Maximize'}
+          >
+            <span className={`titlebar-maximize-icon ${isWindowMaximized ? 'restore' : ''}`} aria-hidden="true"></span>
+          </button>
+          <button type="button" className="titlebar-button close" id="close-button" aria-label="Close">&#x2715;</button>
+        </div>
+      </div>
+      <div className="window-resize-handles" aria-hidden="true">
+        {['North', 'NorthEast', 'East', 'SouthEast', 'South', 'SouthWest', 'West', 'NorthWest'].map((direction) => (
+          <div key={direction} className={`window-resize-handle ${direction.replace(/([A-Z])/g, '-$1').toLowerCase().slice(1)}`} data-resize-direction={direction} />
+        ))}
+      </div>
+      <div
+        className={`container scrollbar ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}
+        id="style-2"
+        ref={scrollRef}
+      >
+        <div className="lenis-content">
+          <div className="top-left-controls">
+            <div id="github-button" className="icon-button">
+              <GitHubIcon />
+            </div>
+            <ThemeToggle isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+            <div className="icon-button">
+              <TranslateToggle isActive={isPersian} onToggle={toggleLocale} />
+            </div>
+          </div>
+          <h1>{pageTitle}</h1>
+
+          <div key={`page-${currentPage}`} className="page-transition">
+          {currentPage === 'ping' ? (
+            <div id="ping-results">
+            <div className="add-host-container">
+              <div className="public-ip-widget" title={texts.publicIpLabel}>
+                <div className="public-ip-info">
+                  {isIran(publicNetworkInfo.country) ? (
+                    <img src={iranFlag} alt="" className="public-ip-flag-img" />
+                  ) : publicIpFlagClass ? (
+                    <span className={`public-ip-flag ${publicIpFlagClass}`} aria-hidden="true"></span>
+                  ) : (
+                    <span className="public-ip-flag-fallback" aria-hidden="true">--</span>
+                  )}
+                  <span className="public-ip-value">{visiblePublicIp}</span>
+                </div>
+                <button
+                  type="button"
+                  className="public-ip-action"
+                  onClick={loadPublicNetworkInfo}
+                  aria-label={texts.publicIpRefresh}
+                  title={texts.publicIpRefresh}
+                  disabled={isPublicIpLoading}
+                >
+                  <RefreshIcon spinning={isPublicIpLoading} />
+                </button>
+                <button
+                  type="button"
+                  className="public-ip-action public-ip-action-visibility"
+                  onClick={() => setShowPublicIp((prev) => !prev)}
+                  aria-label={showPublicIp ? texts.publicIpHide : texts.publicIpShow}
+                  title={showPublicIp ? texts.publicIpHide : texts.publicIpShow}
+                >
+                  {showPublicIp ? <EyeOffIcon className="public-ip-visibility-icon" /> : <EyeOpenIcon className="public-ip-visibility-icon" />}
+                </button>
+              </div>
+              <div className="add-host-actions">
+                <button className="add-host-button" onClick={handleAddNewHost}>
+                  <PencilIcon />
+                  {texts.add}
+                </button>
+                <button
+                  className={`edit-host-button ${isEditMode ? 'active' : ''}`}
+                  onClick={() => setIsEditMode(!isEditMode)}
+                >
+                  <EditIcon />
+                  {texts.edit}
+                </button>
+              </div>
+            </div>
+            <div className="profile-strip">
+              <span>{texts.profiles}</span>
+              {['gaming', 'work', 'streaming', 'iran'].map((profileKey) => (
+                <button
+                  key={profileKey}
+                  type="button"
+                  className={`profile-chip ${activeProfile === profileKey ? 'active' : ''}`}
+                  onClick={() => applyProfile(profileKey)}
+                >
+                  {texts[`profile${profileKey.charAt(0).toUpperCase()}${profileKey.slice(1)}`]}
+                </button>
+              ))}
+            </div>
+            {isEditMode && <div className="reorder-hint">{texts.reorderHint}</div>}
+
+            {/* All Hosts with dnd-kit drag and drop */}
+            {/* Editing Host - outside of SortableContext */}
+            {editingHost && (
+              <SortableItem
+                key="editing-temp"
+                id="editing-temp"
+                label={editingHost.label}
+                host={editingHost.host}
+                editing={true}
+                onSave={handleSaveHost}
+                onCancel={handleCancelEdit}
+                texts={texts}
+                statusTexts={statusTexts}
+                pingIntervalMs={pingIntervalMs}
+                optimizationEnabled={optimizationEnabled}
+                onLog={addLogEntry}
+                pingAlertThresholdMs={pingAlertThresholdMs}
+                packetLossAlertThreshold={packetLossAlertThreshold}
+              />
+            )}
+
+            {/* All Hosts with dnd-kit drag and drop */}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <SortableContext
+                items={hostItems.map((item) => item.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {hostItems.map(({ host, id }) => (
+                <SortableItem
+                  key={id}
+                  id={id}
+                  label={host.label}
+                  host={host.host}
+                  showDelete={isEditMode}
+                  isEditMode={isEditMode}
+                  isSorting={isSortingHosts}
+                  isDragSource={activeDragId === id}
+                  isPinned={Boolean(host.pinned)}
+                  isPaused={Boolean(host.paused)}
+                  isCopied={copyFeedbackKey === `ping-${id}`}
+                  onTogglePin={handleToggleHostPin}
+                  onTogglePause={handleToggleHostPause}
+                  onCopy={(hostId, value) => handleCopyText(value, `ping-${hostId}`)}
+                  onDelete={() => handleDeleteHost(host)}
+                  texts={texts}
+                  statusTexts={statusTexts}
+                  pingIntervalMs={pingIntervalMs}
+                  optimizationEnabled={optimizationEnabled}
+                  onLog={addLogEntry}
+                  pingAlertThresholdMs={pingAlertThresholdMs}
+                  packetLossAlertThreshold={packetLossAlertThreshold}
+                />
+              ))}
+              </SortableContext>
+              {typeof document !== 'undefined'
+                ? createPortal(
+                    <DragOverlay dropAnimation={DRAG_OVERLAY_DROP_ANIMATION}>
+                      {activeDragHost ? (
+                        <DragPreviewCard
+                          label={activeDragHost.label}
+                          host={activeDragHost.host}
+                          moveText={texts.dragPreviewMove}
+                        />
+                      ) : null}
+                    </DragOverlay>,
+                    document.body
+                  )
+                : null}
+            </DndContext>
+          </div>
+        ) : currentPage === 'dns' ? (
+          <div className="dns-page">
+            <div className="dns-tool-tabs">
+              <button
+                className={`dns-tool-tab ${dnsToolMode === 'test' ? 'active' : ''}`}
+                onClick={() => setDnsToolMode('test')}
+              >
+                {texts.dnsToolTest}
+              </button>
+              <button
+                className={`dns-tool-tab ${dnsToolMode === 'manager' ? 'active' : ''}`}
+                onClick={() => setDnsToolMode('manager')}
+              >
+                {texts.dnsToolManager}
+              </button>
+            </div>
+            {dnsError && <div className="dns-error">{dnsError}</div>}
+            {dnsToolMode === 'test' ? (
+              <div className="dns-test-layout">
+                <div className="dns-panel dns-query-panel">
+                  <div className="dns-input-row">
+                    <input
+                      className="dns-input"
+                      placeholder={texts.dnsPlaceholder}
+                      value={dnsDomain}
+                      onChange={(e) => setDnsDomain(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleDnsTest()}
+                      disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                    />
+                    <div className="dns-primary-actions">
+                      <button
+                        className="dns-button"
+                        onClick={handleDnsTest}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      >
+                        {dnsLoading ? texts.dnsTesting : texts.dnsTest}
+                      </button>
+                      <button
+                        className="dns-button secondary"
+                        onClick={handleDnsBenchmark}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      >
+                        {dnsBenchmarkLoading ? texts.dnsBenchmarking : texts.dnsBenchmark}
+                      </button>
+                    </div>
+                    <div className="dns-rounds">
+                      <span>{texts.dnsBenchmarkRounds}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={dnsBenchmarkRounds}
+                        onChange={handleBenchmarkRoundsChange}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      />
+                    </div>
+                  </div>
+                  <div className="dns-custom-tools">
+                    <div className="dns-custom-title">{texts.dnsCustomTitle}</div>
+                    <div className="dns-custom-row">
+                      <input
+                        className="dns-input dns-custom-input"
+                        placeholder={texts.dnsCustomPlaceholder}
+                        value={customDnsInput}
+                        onChange={(event) => setCustomDnsInput(event.target.value)}
+                        onKeyDown={(event) => event.key === 'Enter' && handleAddCustomDns()}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      />
+                      <button
+                        className="dns-button dns-custom-add"
+                        onClick={handleAddCustomDns}
+                        disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                      >
+                        {texts.dnsAddServer}
+                      </button>
+                    </div>
+                    {customDnsServers.length === 0 ? (
+                      <div className="dns-custom-empty">{texts.dnsCustomEmpty}</div>
+                    ) : (
+                      <div className="dns-custom-list">
+                        {customDnsServers.map((server) => (
+                          <button
+                            key={`custom-dns-${server}`}
+                            type="button"
+                            className="dns-custom-chip"
+                            onClick={() => handleRemoveCustomDns(server)}
+                            title={texts.deleteTitle(server)}
+                          >
+                            <span>{server}</span>
+                            <span className="dns-custom-chip-x">x</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {topFastestDns.length > 0 && (
+                  <div className="dns-panel dns-benchmark">
+                    <div className="dns-benchmark-title">{texts.dnsTopFastest}</div>
+                    {dnsRecommendation && (
+                      <div className="dns-recommendation">
+                        <div>
+                          <strong>{texts.dnsRecommendation}</strong>
+                          <span>
+                            {dnsRecommendation.primary.server}
+                            {dnsRecommendation.secondary ? ` + ${dnsRecommendation.secondary.server}` : ''}
+                          </span>
+                        </div>
+                        <button
+                          className="dns-button secondary"
+                          type="button"
+                          onClick={handleApplyRecommendedDns}
+                          disabled={dnsManagerLoading}
+                        >
+                          {texts.dnsApplyRecommended}
+                        </button>
+                      </div>
+                    )}
+                    <div className="dns-benchmark-grid">
+                      {topFastestDns.map((item) => (
+                        <div key={`bench-${item.server}`} className="dns-benchmark-card">
+                          <div className="dns-benchmark-main">{item.server}</div>
+                          <div className="dns-benchmark-meta">
+                            {texts.dnsAverage} {Math.round(item.averageMs)}ms
+                          </div>
+                          <div className="dns-benchmark-meta">
+                            {texts.dnsSuccessRate} {item.successRate}%
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(dnsResults.length > 0 || dnsLoading) && (
+                  <div className="dns-panel dns-table-wrap">
+                    <div className="dns-summary">
+                      <span className="dns-summary-good">{texts.usable} ({usableDns.length})</span>
+                      <span className="dns-summary-bad">{texts.blocked} ({blockedDns.length})</span>
+                    </div>
+                    <div className="dns-table-toolbar">
+                      <input
+                        className="dns-table-search"
+                        value={dnsSearch}
+                        onChange={(event) => setDnsSearch(event.target.value)}
+                        placeholder={texts.dnsSearchPlaceholder}
+                        disabled={dnsLoading}
+                      />
+                      <div className="dns-table-filters">
+                        <button
+                          type="button"
+                          className={`dns-table-filter ${dnsStatusFilter === 'all' ? 'active' : ''}`}
+                          onClick={() => setDnsStatusFilter('all')}
+                        >
+                          {texts.logAll}
+                        </button>
+                        <button
+                          type="button"
+                          className={`dns-table-filter ${dnsStatusFilter === 'usable' ? 'active' : ''}`}
+                          onClick={() => setDnsStatusFilter('usable')}
+                        >
+                          {texts.usable}
+                        </button>
+                        <button
+                          type="button"
+                          className={`dns-table-filter ${dnsStatusFilter === 'blocked' ? 'active' : ''}`}
+                          onClick={() => setDnsStatusFilter('blocked')}
+                        >
+                          {texts.blocked}
+                        </button>
+                      </div>
+                      <AppDropdown
+                        className="dns-table-sort"
+                        value={dnsSortKey}
+                        onChange={setDnsSortKey}
+                        options={dnsSortOptions}
+                      />
+                    </div>
+                    <div className="dns-table">
+                      <div className="dns-table-head">
+                        <span>{texts.dnsTableServer}</span>
+                        <span>{texts.dnsTableLatency}</span>
+                        <span>{texts.dnsTableStatus}</span>
+                        <span>{texts.dnsTableActions}</span>
+                      </div>
+                      <div className="dns-table-body">
+                        {dnsLoading ? (
+                          Array.from({ length: 6 }).map((_, index) => (
+                            <div key={`dns-skeleton-${index}`} className="dns-table-row skeleton">
+                              <span className="skeleton-line"></span>
+                              <span className="skeleton-line short"></span>
+                              <span className="skeleton-line short"></span>
+                              <span className="skeleton-line short"></span>
+                            </div>
+                          ))
+                        ) : dnsTableRows.length === 0 ? (
+                          <div className="dns-table-empty">{texts.dnsTableEmpty}</div>
+                        ) : (
+                          dnsTableRows.map((item, index) => (
+                            <div key={`dns-row-${item.server}-${item.status ? 'ok' : 'blocked'}-${Math.round(item.latencyMs ?? -1)}-${index}`} className="dns-table-row">
+                              <span className="dns-row-server">{item.server}</span>
+                              <span className="dns-row-latency">
+                                {Number.isFinite(item.latencyMs) ? `${Math.round(item.latencyMs)}ms` : '--'}
+                              </span>
+                              <span className={`status-pill ${item.status ? 'good' : 'bad'}`}>
+                                {item.status ? texts.usable : texts.blocked}
+                              </span>
+                              <button
+                                type="button"
+                                className={`dns-copy-btn ${copyFeedbackKey === `dns-${item.server}` ? 'active' : ''}`}
+                                onClick={() => handleCopyText(item.server, `dns-${item.server}`)}
+                              >
+                                {copyFeedbackKey === `dns-${item.server}` ? texts.copied : texts.copy}
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="dns-panel dns-batch">
+                  <div className="dns-batch-title">{texts.dnsBatchTitle}</div>
+                  <textarea
+                    className="dns-batch-input"
+                    placeholder={texts.dnsBatchPlaceholder}
+                    value={batchDomainsInput}
+                    onChange={(event) => setBatchDomainsInput(event.target.value)}
+                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                  />
+                  <button
+                    className="dns-button dns-batch-button"
+                    onClick={handleBatchDomains}
+                    disabled={dnsLoading || dnsBenchmarkLoading || batchLoading}
+                  >
+                    {batchLoading ? texts.dnsBatchRunning : texts.dnsBatchRun}
+                  </button>
+                  {batchResults.length > 0 && (
+                    <div className="dns-batch-results">
+                      {batchResults.map((item) => (
+                        <div
+                          key={`batch-${item.domain}`}
+                          className={`dns-batch-card ${item.status === 'resolved' ? 'resolved' : 'unresolved'}`}
+                        >
+                          <div className="dns-batch-main">{item.domain}</div>
+                          <div className="dns-batch-meta">
+                            {item.status === 'resolved' ? texts.dnsResolved : texts.dnsUnresolved}
+                          </div>
+                          <div className="dns-batch-meta">
+                            {texts.usable}: {item.usableCount} | {texts.blocked}: {item.blockedCount}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="dns-manager">
+                <div className="dns-manager-header">
+                  <div className="dns-manager-title">{texts.dnsManagerTitle}</div>
+                  <button
+                    className="dns-button secondary dns-manager-refresh"
+                    onClick={() => loadDnsAdapters(true)}
+                    disabled={dnsManagerLoading}
+                  >
+                    {texts.dnsManagerRefresh}
+                  </button>
+                </div>
+                <div className="dns-manager-layout">
+                  <div className="dns-manager-form">
+                    <div className="dns-manager-row">
+                      <label>{texts.dnsManagerAdapter}</label>
+                      <div className="dns-manager-controls">
+                        <AppDropdown
+                          className="dns-manager-select"
+                          value={dnsSelectedAdapter}
+                          onChange={(selected) => {
+                            setDnsSelectedAdapter(selected);
+                            const adapter = dnsAdapters.find((item) => getDnsAdapterKey(item) === selected);
+                            if (adapter) {
+                              setDnsPrimaryInput(adapter.dns?.[0] || '');
+                              setDnsSecondaryInput(adapter.dns?.[1] || '');
+                            }
+                          }}
+                          disabled={dnsManagerLoading || dnsAdapters.length === 0}
+                          options={
+                            dnsAdapters.length === 0
+                              ? [{ value: '', label: texts.dnsManagerNoAdapters }]
+                              : dnsAdapters.map((adapter) => ({
+                                value: getDnsAdapterKey(adapter),
+                                label: adapter.name,
+                              }))
+                          }
+                          placeholder={texts.dnsManagerNoAdapters}
+                        />
+                      </div>
+                    </div>
+                    <div className="dns-manager-row">
+                      <label>{texts.dnsManagerPrimary}</label>
+                      <input
+                        className="dns-input dns-manager-input"
+                        value={dnsPrimaryInput}
+                        onChange={(event) => setDnsPrimaryInput(event.target.value)}
+                        disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                      />
+                    </div>
+                    <div className="dns-manager-row">
+                      <label>{texts.dnsManagerSecondary}</label>
+                      <input
+                        className="dns-input dns-manager-input"
+                        value={dnsSecondaryInput}
+                        onChange={(event) => setDnsSecondaryInput(event.target.value)}
+                        disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                      />
+                    </div>
+                    <div className="dns-manager-actions">
+                      <button
+                        className="dns-button"
+                        onClick={handleApplySystemDns}
+                        disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                      >
+                        {texts.dnsManagerApply}
+                      </button>
+                      <button
+                        className="dns-button secondary dns-manager-reset"
+                        onClick={handleResetSystemDns}
+                        disabled={dnsManagerLoading || !dnsSelectedAdapter}
+                      >
+                        {texts.dnsManagerReset}
+                      </button>
+                    </div>
+                    {dnsManagerStatus && <div className="dns-manager-status">{dnsManagerStatus}</div>}
+                  </div>
+                  <div className="dns-manager-side">
+                    {selectedAdapterDetails && (
+                      <div className="adapter-details">
+                        <span>{texts.adapterCurrentDns}: {(selectedAdapterDetails.dns || []).join(', ') || 'DHCP'}</span>
+                        {selectedAdapterDetails.ipv4 && <span>{texts.adapterIpv4}: {selectedAdapterDetails.ipv4}</span>}
+                        {selectedAdapterDetails.gateway && <span>{texts.adapterGateway}: {selectedAdapterDetails.gateway}</span>}
+                        {selectedAdapterDetails.status && <span>{texts.adapterStatus}: {selectedAdapterDetails.status}</span>}
+                      </div>
+                    )}
+                    <div className="dns-manager-actions secondary-row">
+                      <button
+                        className="dns-button secondary"
+                        type="button"
+                        onClick={handleApplyRecommendedDns}
+                        disabled={dnsManagerLoading || !dnsRecommendation}
+                      >
+                        {texts.dnsApplyRecommended}
+                      </button>
+                      <button
+                        className="dns-button secondary dns-manager-reset"
+                        type="button"
+                        onClick={handleRollbackDns}
+                        disabled={dnsManagerLoading || !lastDnsBackup}
+                      >
+                        {texts.dnsRollback}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : currentPage === 'speed' ? (
+          <div className="speed-page">
+            <div className="speed-console">
+              <div className="speed-console-main">
+                <div className="speed-provider-switch">
+                  <span className="speed-provider-label">{texts.speedProviderTitle}</span>
+                  <div className="speed-provider-tabs">
+                    <button
+                      className={`speed-provider-tab ${speedProvider === 'cloudflare' ? 'active' : ''}`}
+                      onClick={() => setSpeedProvider('cloudflare')}
+                      disabled={speedLoading}
+                    >
+                      {texts.speedProviderCloudflare}
+                    </button>
+                    <button
+                      className={`speed-provider-tab ${speedProvider === 'hetzner' ? 'active' : ''}`}
+                      onClick={() => setSpeedProvider('hetzner')}
+                      disabled={speedLoading}
+                    >
+                      {texts.speedProviderHetzner}
+                    </button>
+                  </div>
+                </div>
+                <div className={`speed-phase ${speedPhase}`}>
+                  <span className="speed-phase-dot"></span>
+                  {speedPhaseLabel}
+                </div>
+                <button
+                  className={`speed-play ${speedLoading ? 'loading' : ''}`}
+                  onClick={speedLoading ? handleStopSpeed : handleStartSpeed}
+                  aria-label={speedLoading ? 'Stop speed test' : 'Start speed test'}
+                >
+                  <span className="speed-play-ring"></span>
+                  <span className="speed-play-icon">
+                    {speedLoading ? <img src={pauseIcon} alt="" className="speed-play-icon-img" /> : <img src={playIcon} alt="" className="speed-play-icon-img" />}
+                  </span>
+                  <span className="speed-play-label">
+                    {speedLoading ? (texts.speedStop || 'Stop') : texts.speedStart}
+                  </span>
+                </button>
+              </div>
+
+              <div className="speed-console-side">
+                <div className="speed-overview-head">
+                  <span>{texts.speedOverview}</span>
+                  <strong className={`speed-quality ${speedQuality.tone}`}>{speedQuality.label}</strong>
+                </div>
+                <div className="speed-primary-results">
+                  <div className="speed-primary-metric download">
+                    <span>{texts.speedDownload}</span>
+                    <strong>{speedMetrics ? speedMetrics.downloadMbps : '--'}</strong>
+                    <em>Mbps</em>
+                  </div>
+                  <div className="speed-primary-metric upload">
+                    <span>{texts.speedUpload}</span>
+                    <strong>{speedMetrics ? speedMetrics.uploadMbps : '--'}</strong>
+                    <em>Mbps</em>
+                  </div>
+                </div>
+                <div className="speed-details-grid">
+                  <div className="speed-detail">
+                    <span>{texts.speedLatency}</span>
+                    <strong>{speedMetrics ? speedMetrics.latencyMs : '--'} <em>ms</em></strong>
+                  </div>
+                  <div className="speed-detail">
+                    <span>{texts.speedJitter}</span>
+                    <strong>{speedMetrics ? speedMetrics.jitterMs : '--'} <em>ms</em></strong>
+                  </div>
+                  <div className="speed-detail wide">
+                    <span>{texts.speedPublicIp}</span>
+                    <strong>
+                      {speedMetrics && isIran(speedMetrics.country) ? (
+                        <img src={iranFlag} alt="" className="speed-ip-flag-img" />
+                      ) : (
+                        <span
+                          className={`speed-ip-flag ${speedMetrics ? getFlagClass(speedMetrics.country) : ''}`}
+                          aria-hidden="true"
+                        ></span>
+                      )}
+                      {speedMetrics ? speedMetrics.ip : '--'}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="speed-note">
+              <div className="speed-note-title">
+                {speedProvider === 'hetzner' ? texts.speedProviderHetzner : texts.speedProviderCloudflare}
+              </div>
+              <div className="speed-note-body">{texts.speedNote}</div>
+            </div>
+          </div>
+        ) : currentPage === 'network' ? (
+          <div className="network-page">
+            <div className="network-header-panel">
+              <div className="network-identity">
+                <span className="network-page-icon" aria-hidden="true">
+                  <img src={nusageIcon} alt="" />
+                </span>
+                <div>
+                  <div className="network-kicker">{texts.networkUsage}</div>
+                  <div className="network-subtitle">{texts.networkMonitorSubtitle}</div>
+                </div>
+              </div>
+              <div className="network-header-actions">
+                <span className="network-live-pill">
+                  <i aria-hidden="true"></i>
+                  1s
+                </span>
+              </div>
+            </div>
+
+            {networkError && (
+              <div className="network-error">
+                {texts.networkUnavailable} {networkError}
+              </div>
+            )}
+
+            <div className="network-overview-grid">
+              <div className="network-throughput-card">
+                <div className="network-throughput-head">
+                  <div>
+                    <span>{texts.networkDownloadLive}</span>
+                    <AnimatedRate value={networkUsageStats.downloadRate} />
+                  </div>
+                  <div>
+                    <span>{texts.networkUploadLive}</span>
+                    <AnimatedRate value={networkUsageStats.uploadRate} />
+                  </div>
+                </div>
+                <div className="network-throughput-rail" aria-hidden="true">
+                  <span
+                    className="down"
+                    style={{ width: `${Math.min(100, Math.max(4, networkUsageStats.downloadRate ? (networkUsageStats.downloadRate / Math.max(networkUsageStats.downloadRate + networkUsageStats.uploadRate, 1)) * 100 : 0))}%` }}
+                  ></span>
+                  <span
+                    className="up"
+                    style={{ width: `${Math.min(100, Math.max(4, networkUsageStats.uploadRate ? (networkUsageStats.uploadRate / Math.max(networkUsageStats.downloadRate + networkUsageStats.uploadRate, 1)) * 100 : 0))}%` }}
+                  ></span>
+                </div>
+                <div className="network-live-summary">
+                  <span>{networkUsageStats.activeAdapters}/{networkUsageStats.adapters.length} {texts.networkAdapters}</span>
+                  <span>{networkUsageStats.activeProcesses} {texts.networkProcesses}</span>
+                </div>
+              </div>
+
+              <div className="network-total-stack">
+                <div className="network-metric-card">
+                  <span>{texts.networkTotalReceived}</span>
+                  <strong>{formatBytes(networkUsageStats.totalReceived)}</strong>
+                </div>
+                <div className="network-metric-card">
+                  <span>{texts.networkTotalSent}</span>
+                  <strong>{formatBytes(networkUsageStats.totalSent)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="network-content-grid">
+              <div className="network-overview-column">
+                <div className="network-panel">
+                <div className="network-panel-head">
+                  <div className="network-panel-title">{texts.networkAdapters}</div>
+                  <span>{networkUsageStats.adapters.length}</span>
+                </div>
+                {networkUsageStats.adapters.length === 0 ? (
+                  <div className="network-empty">{texts.networkNoAdapters}</div>
+                ) : (
+                  <div className="network-adapter-list">
+                    {networkUsageStats.adapters.map((adapter) => {
+                      const adapterRate = Number(adapter.downloadRate || 0) + Number(adapter.uploadRate || 0);
+                      const adapterShare = networkUsageStats.maxAdapterRate
+                        ? Math.min(100, Math.max(3, (adapterRate / networkUsageStats.maxAdapterRate) * 100))
+                        : 0;
+                      return (
+                        <div className="network-adapter-row" key={adapter.name}>
+                          <div className="network-adapter-top">
+                            <div className="network-adapter-main">
+                              <strong>{adapter.name}</strong>
+                              <span>{formatBytes(adapter.receivedBytes)} / {formatBytes(adapter.sentBytes)}</span>
+                            </div>
+                            <div className="network-adapter-rates">
+                              <span className="down">{formatByteRate(adapter.downloadRate)}</span>
+                              <span className="up">{formatByteRate(adapter.uploadRate)}</span>
+                            </div>
+                          </div>
+                          <div className="network-adapter-meter" aria-hidden="true">
+                            <span style={{ width: `${adapterShare}%` }}></span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                </div>
+                <section
+                  className="network-panel network-download-chart-card"
+                  onMouseLeave={() => setHoveredNetworkApplicationId('')}
+                >
+                  <div className="network-download-chart-head">
+                    <div>
+                      <strong>{IS_LINUX_RUNTIME ? texts.networkLinuxTrafficTitle : texts.networkAppDownloadTitle}</strong>
+                      <span>{IS_LINUX_RUNTIME ? texts.networkLinuxTrafficSubtitle : texts.networkAppDownloadSubtitle}</span>
+                    </div>
+                    <div className="network-download-chart-actions">
+                      <em title={texts.networkAppDownloadTracked}>
+                        {formatBytes(networkUsageStats.applicationDownloadTotal)}
+                      </em>
+                      <button
+                        type="button"
+                        className="network-download-reset"
+                        onClick={resetNetworkApplicationUsage}
+                        disabled={networkUsageResetting}
+                        aria-label={texts.networkAppDownloadReset}
+                        title={texts.networkAppDownloadReset}
+                      >
+                        <RefreshIcon spinning={networkUsageResetting} />
+                      </button>
+                    </div>
+                  </div>
+                  {IS_LINUX_RUNTIME && networkUsageStats.applicationUsage.length === 0 ? (
+                    <div className="network-linux-traffic-note">
+                      <span className="network-linux-traffic-icon" aria-hidden="true">↕</span>
+                      <div>
+                        <strong>{texts.networkLinuxTrafficStatus}</strong>
+                        <span>{texts.networkLinuxTrafficNote}</span>
+                      </div>
+                    </div>
+                  ) : networkUsageStats.applicationUsage.length === 0 ? (
+                    <div className="network-download-chart-empty">
+                      <span className="network-download-empty-ring" aria-hidden="true"></span>
+                      <span>{texts.networkAppDownloadEmpty}</span>
+                    </div>
+                  ) : (
+                    <div className="network-download-chart-layout">
+                      <div className="network-download-donut">
+                        <svg viewBox="0 0 120 120" role="img" aria-label={texts.networkAppDownloadTitle}>
+                          <circle className="network-download-donut-track" cx="60" cy="60" r="42" />
+                          {networkUsageStats.applicationUsage.map((application) => {
+                            return (
+                              <path
+                                key={`download-segment-${application.id}`}
+                                className={`network-download-donut-segment ${highlightedNetworkApplication?.id === application.id ? 'active' : ''}`}
+                                d={application.path}
+                                stroke={application.color}
+                                fill={application.color}
+                              >
+                                <title>{`${application.name}: ${formatBytes(application.downloadBytes)} (${Math.round(application.share * 100)}%)`}</title>
+                              </path>
+                            );
+                          })}
+                        </svg>
+                        {highlightedNetworkApplication && (
+                          <div className="network-download-donut-center" aria-live="polite">
+                            <span className="network-download-center-icon">
+                              {highlightedNetworkApplication.iconDataUrl ? (
+                                <img src={highlightedNetworkApplication.iconDataUrl} alt="" />
+                              ) : (
+                                <strong>
+                                  {Array.from(highlightedNetworkApplication.name || '?').slice(0, 2).join('').toUpperCase()}
+                                </strong>
+                              )}
+                            </span>
+                            <strong>{highlightedNetworkApplication.name}</strong>
+                            <span>{Math.round(highlightedNetworkApplication.share * 100)}%</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="network-download-legend">
+                        {networkUsageStats.applicationUsage.map((application) => (
+                          <button
+                            type="button"
+                            key={`download-legend-${application.id}`}
+                            className={highlightedNetworkApplication?.id === application.id ? 'active' : ''}
+                            style={{ '--chart-color': application.color }}
+                            onMouseEnter={() => setHoveredNetworkApplicationId(application.id)}
+                            onFocus={() => setHoveredNetworkApplicationId(application.id)}
+                            aria-label={`${application.name}: ${formatBytes(application.downloadBytes)}, ${Math.round(application.share * 100)}%`}
+                          >
+                            <i aria-hidden="true"></i>
+                            <span>
+                              <strong>{application.name}</strong>
+                              <em>{formatBytes(application.downloadBytes)}</em>
+                            </span>
+                            <b>{Math.round(application.share * 100)}%</b>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              <div className="network-panel network-process-panel">
+                <div className="network-panel-head">
+                  <div className="network-process-heading">
+                    <div className="network-panel-title">{texts.networkProcesses}</div>
+                    <span>{networkUsageStats.activeProcesses} {texts.networkProcessCountLabel}</span>
+                  </div>
+                  <span className="network-process-total" title={texts.networkProcesses}>{networkUsageStats.processes.length}</span>
+                </div>
+                <div className={`limiter-engine-status ${bandwidthLimiterState.engine?.ready ? 'ready' : 'pending'}`}>
+                  <span className="limiter-engine-dot" aria-hidden="true"></span>
+                  <strong>
+                    {bandwidthLimiterState.engine?.ready
+                      ? texts.limiterEngineReady
+                      : bandwidthLimiterState.engine?.running
+                        ? texts.limiterServicePreparing
+                        : bandwidthLimiterState.engine?.installed
+                          ? texts.limiterServiceStopped
+                          : texts.limiterSetupRequired}
+                  </strong>
+                  <em>{bandwidthLimiterState.rules?.length || 0}</em>
+                </div>
+                {!bandwidthLimiterState.engine?.ready && (
+                  <div className="limiter-engine-hint">{texts.limiterStagedHint}</div>
+                )}
+                {bandwidthLimitFeedback && !bandwidthLimitModalProcess && (
+                  <div className="limiter-inline-feedback">{bandwidthLimitFeedback}</div>
+                )}
+                <div className="network-process-tools">
+                  <div className="network-process-search-wrap">
+                    <span className="network-process-search-icon" aria-hidden="true">⌕</span>
+                    <input
+                      type="search"
+                      value={networkProcessSearch}
+                      onChange={(event) => setNetworkProcessSearch(event.target.value)}
+                      placeholder={texts.networkSearchProcesses}
+                      aria-label={texts.networkSearchProcesses}
+                      className="network-process-search"
+                    />
+                    {networkProcessSearch && (
+                      <button
+                        type="button"
+                        className="network-process-search-clear"
+                        aria-label={texts.networkClearSearch}
+                        title={texts.networkClearSearch}
+                        onClick={() => setNetworkProcessSearch('')}
+                      >×</button>
+                    )}
+                  </div>
+                  <AppDropdown
+                    value={networkProcessSort}
+                    onChange={setNetworkProcessSort}
+                    options={networkProcessSortOptions}
+                    className="network-process-sort"
+                    prefix={texts.networkSortBy}
+                    ariaLabel={texts.networkSortBy}
+                  />
+                </div>
+                {networkUsageStats.activeProcesses === 0 ? (
+                  <div className="network-empty">
+                    {texts.networkNoProcesses}
+                    <span>{texts.networkLinuxProcessNote}</span>
+                  </div>
+                ) : networkUsageStats.processes.length === 0 ? (
+                  <div className="network-empty">{texts.networkNoProcessMatches}</div>
+                ) : (
+                  <div className="network-process-list">
+                    {visibleNetworkProcessGroups.map((group) => (
+                      <div className="network-process-group" key={group.category}>
+                        <div className="network-process-group-title">
+                          <span>{group.label}</span>
+                          <em>{networkUsageStats.processGroups.find((item) => item.category === group.category)?.processes.length || group.processes.length}</em>
+                        </div>
+                        {group.processes.map((process) => {
+                          const isExpanded = Boolean(expandedNetworkProcesses[process.id]);
+                          const processDetailsId = `network-process-details-${String(process.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+                          const processExecutablePath = (process.paths || [])[0] || '';
+                          const limitRule = bandwidthRulesByPath.get(normalizeLimiterPath(processExecutablePath));
+                          const remotes = (process.remoteAddresses || []).slice(0, 3).join(', ');
+                          const pidLabel = process.grouped && process.pids.length > 1
+                            ? `${texts.networkGroupedPids}: ${process.pids.slice(0, 4).join(', ')}${process.pids.length > 4 ? '...' : ''}`
+                            : `${texts.networkPid}: ${process.pids[0] || '--'}`;
+                          return (
+                            <div className={`network-process-card ${process.status}`} key={process.id}>
+                              <div className="network-process-card-main">
+                                <div className="network-process-identity">
+                                  <span className="network-process-app-icon">
+                                    {process.iconDataUrl ? (
+                                      <img src={process.iconDataUrl} alt="" />
+                                    ) : (
+                                      <strong>{Array.from(process.name || '?').slice(0, 2).join('').toUpperCase()}</strong>
+                                    )}
+                                  </span>
+                                  <div className="network-process-name">
+                                    <strong>{process.name}</strong>
+                                    <span>{pidLabel}</span>
+                                  </div>
+                                </div>
+                                <div className="network-process-badges">
+                                  {limitRule && (
+                                    <span className="network-process-limit-badge">
+                                      {networkControlIsWindows
+                                        ? bandwidthLimiterState.engine?.ready
+                                          ? texts.limiterBlocked
+                                          : texts.limiterStaged
+                                        : bandwidthLimiterState.engine?.ready
+                                          ? texts.limiterActive
+                                          : texts.limiterStaged}
+                                    </span>
+                                  )}
+                                  <span className={`network-process-status ${process.status}`}>{process.statusLabel}</span>
+                                  <span className="network-process-count">{process.connections}</span>
+                                </div>
+                              </div>
+                              <div className="network-process-preview">
+                                <span>{texts.networkRemote}: {remotes || '--'}</span>
+                              </div>
+                              <div
+                                id={processDetailsId}
+                                className={`network-process-details-shell ${isExpanded ? 'expanded' : ''}`}
+                                aria-hidden={!isExpanded}
+                              >
+                                <div className="network-process-details">
+                                  <div>
+                                    <span>{texts.networkConnections}</span>
+                                    <strong>{process.connections}</strong>
+                                  </div>
+                                  <div>
+                                    <span>{texts.networkRemote}</span>
+                                    <strong>{(process.remoteAddresses || []).join(', ') || '--'}</strong>
+                                  </div>
+                                  {process.paths.length > 0 && (
+                                    <div>
+                                      <span>{texts.networkPath}</span>
+                                      <strong>{process.paths.join(' | ')}</strong>
+                                    </div>
+                                  )}
+                                  {limitRule && !networkControlIsWindows && (
+                                    <div>
+                                      <span>{texts.limiterTitle}</span>
+                                      <strong>
+                                        {limitRule.blocked
+                                          ? texts.limiterBlocked
+                                          : `↓ ${formatBandwidthLimit(limitRule.downloadLimitBps)} / ↑ ${formatBandwidthLimit(limitRule.uploadLimitBps)}`}
+                                      </strong>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="network-process-card-actions">
+                                <button
+                                  type="button"
+                                  className="network-process-limit-button"
+                                  disabled={!processExecutablePath || bandwidthLimitSaving}
+                                  onClick={() => networkControlIsWindows
+                                    ? handleToggleApplicationBlock(process)
+                                    : openBandwidthLimitModal(process)}
+                                >
+                                  {networkControlIsWindows
+                                    ? limitRule?.blocked
+                                      ? texts.limiterUnblockInternet
+                                      : texts.limiterBlockInternet
+                                    : limitRule
+                                      ? texts.limiterEditLimit
+                                      : texts.limiterSetLimit}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="network-process-toggle"
+                                  aria-expanded={isExpanded}
+                                  aria-controls={processDetailsId}
+                                  onClick={() => setExpandedNetworkProcesses((current) => ({
+                                    ...current,
+                                    [process.id]: !current[process.id],
+                                  }))}
+                                >
+                                  {isExpanded ? texts.networkHideDetails : texts.networkDetails}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                    {canToggleNetworkProcesses && (
+                      <button
+                        type="button"
                         className="network-process-show-more"
                         onClick={() => setShowAllNetworkProcesses((current) => !current)}
                       >
