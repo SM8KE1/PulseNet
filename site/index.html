@@ -16,7 +16,7 @@
   <body>
     <div class="noise" aria-hidden="true"></div>
     <header class="topbar wrap">
-      <a class="brand" href="#top" aria-label="PulseNet home"><span class="brand-mark"><i></i><i></i><i></i></span><span>Pulse<span class="brand-light">Net</span></span></a>
+      <a class="brand" href="#top" aria-label="PulseNet home"><img class="brand-mark" src="./icon.png" alt="" /><span>Pulse<span class="brand-light">Net</span></span></a>
       <nav class="nav-links" aria-label="Main navigation"><a href="#features">Features</a><a href="#inside">Inside PulseNet</a><a href="#platforms">Platforms</a></nav>
       <a class="nav-cta" href="https://github.com/SM8KE1/PulseNet/releases/latest">Get PulseNet <span>↗</span></a>
     </header>
@@ -30,18 +30,32 @@
           <div class="hero-actions"><a class="button button-primary" href="https://github.com/SM8KE1/PulseNet/releases/latest">Explore downloads <span>↗</span></a><a class="text-link" href="#features">Discover PulseNet <span>↓</span></a></div>
           <div class="hero-meta"><span><b class="status-dot"></b> Open source</span><span class="meta-sep"></span><span>Windows · Linux</span></div>
         </div>
-        <div class="hero-visual" aria-label="Abstract 3D network visualization">
-          <div class="orbital orbital-one"></div><div class="orbital orbital-two"></div><div class="orbital orbital-three"></div>
-          <div class="globe"><div class="globe-grid"></div><div class="globe-glow"></div><div class="globe-node node-a"></div><div class="globe-node node-b"></div><div class="globe-node node-c"></div><div class="globe-route route-a"></div><div class="globe-route route-b"></div></div>
-          <div class="float-card ping-card"><span class="card-label">CONNECTION</span><div class="ping-value"><b>24</b><span>ms</span><i class="trend">↗</i></div><div class="mini-chart"><svg viewBox="0 0 200 44" preserveAspectRatio="none"><path d="M0 29 C12 28 13 16 24 20 S39 32 49 25 S62 22 72 24 S83 9 96 17 S107 31 119 22 S130 29 142 21 S157 27 168 15 S185 22 200 8" /></svg></div><span class="card-foot"><i></i> Stable connection</span></div>
-          <div class="float-card device-card"><span class="device-icon">⌘</span><div><b>Every app</b><small>under control</small></div><span class="toggle"><i></i></span></div>
+        <div class="hero-visual" role="img" aria-label="PulseNet monitoring a desktop, DNS server, application traffic, and connection latency">
+          <div class="visual-coordinate">PULSE / 01 — NETWORK CONTROL</div>
+          <div class="network-scene">
+            <div class="scene-floor"></div>
+            <svg class="network-links" viewBox="0 0 600 430" aria-hidden="true">
+              <path class="network-link" d="M300 211 C244 171 204 133 135 112" />
+              <path class="network-link" d="M300 211 C357 165 407 128 473 111" />
+              <path class="network-link" d="M300 211 C244 258 202 302 143 330" />
+              <path class="network-link" d="M300 211 C358 256 405 302 466 329" />
+              <circle class="link-node" cx="135" cy="112" r="4" />
+              <circle class="link-node" cx="473" cy="111" r="4" />
+              <circle class="link-node" cx="143" cy="330" r="4" />
+              <circle class="link-node" cx="466" cy="329" r="4" />
+            </svg>
+            <div class="network-hub"><img src="./icon.png" alt="" /><div><b>PulseNet</b><small>Network control</small></div><span class="hub-state"><i></i> LIVE</span></div>
+            <div class="network-node node-latency"><span class="node-icon">⌁</span><span><small>CONNECTION</small><b>24 <i>ms</i></b></span><em>↗</em></div>
+            <div class="network-node node-dns"><span class="node-icon">◎</span><span><small>DNS SERVER</small><b>1.1.1.1</b></span><em class="node-good">●</em></div>
+            <div class="network-node node-device"><span class="node-icon">▣</span><span><small>THIS DEVICE</small><b>Connected</b></span><em class="node-good">●</em></div>
+            <div class="network-node node-apps"><span class="node-icon">⌘</span><span><small>APP TRAFFIC</small><b>Per-app control</b></span><em>↗</em></div>
+          </div>
           <div class="hero-caption"><span class="caption-line"></span> A little more clarity, at every layer.</div>
-          <div class="visual-coordinate">PULSE / 01 — NETWORK OVERVIEW</div>
         </div>
         <div class="scroll-cue"><span></span> SCROLL TO EXPLORE</div>
       </section>
 
-      <section class="ticker" aria-label="PulseNet capabilities"><div class="ticker-track"><span>CONNECTION MONITORING <b>✳</b> DNS MANAGEMENT <b>✳</b> SPEED TESTS <b>✳</b> APP BANDWIDTH CONTROL <b>✳</b> SEARCHABLE LOGS <b>✳</b> CONNECTION MONITORING <b>✳</b> DNS MANAGEMENT <b>✳</b> SPEED TESTS <b>✳</b> APP BANDWIDTH CONTROL <b>✳</b> SEARCHABLE LOGS <b>✳</b></span></div></section>
+      <section class="ticker" aria-label="PulseNet capabilities"><div class="ticker-track"><span class="ticker-group">CONNECTION MONITORING <b>✳</b> DNS MANAGEMENT <b>✳</b> SPEED TESTS <b>✳</b> APP BANDWIDTH CONTROL <b>✳</b> SEARCHABLE LOGS <b>✳</b></span><span class="ticker-group" aria-hidden="true">CONNECTION MONITORING <b>✳</b> DNS MANAGEMENT <b>✳</b> SPEED TESTS <b>✳</b> APP BANDWIDTH CONTROL <b>✳</b> SEARCHABLE LOGS <b>✳</b></span></div></section>
 
       <section class="intro wrap reveal" id="features"><div class="section-kicker">01 / A BETTER SIGNAL</div><div class="intro-grid"><h2>All the details.<br /><em>One calm view.</em></h2><div><p>PulseNet brings essential network tools together in a focused desktop workspace. See what is happening, understand why, and take action without jumping between utilities.</p><a class="text-link" href="#inside">Take a closer look <span>↓</span></a></div></div></section>
 
@@ -52,11 +66,11 @@
         <article class="feature-card feature-wide reveal"><div class="feature-top"><span class="feature-index">04</span><span class="feature-glyph">⌘</span></div><div class="apps-art"><div class="app-row"><span class="app-symbol">◈</span><span class="app-lines"><i></i><i></i></span><span class="app-rate">4.8 MB/s</span><span class="tiny-switch on"></span></div><div class="app-row"><span class="app-symbol symbol-alt">◉</span><span class="app-lines"><i></i><i></i></span><span class="app-rate">1.2 MB/s</span><span class="tiny-switch"></span></div><div class="app-row"><span class="app-symbol symbol-soft">◇</span><span class="app-lines"><i></i><i></i></span><span class="app-rate">0.0 MB/s</span><span class="tiny-switch"></span></div></div><div class="feature-copy"><h3>Put every app in its lane.</h3><p>See live per-app network use and manage access or bandwidth limits from one place.</p></div></article>
       </section>
 
-      <section class="inside wrap" id="inside"><div class="section-kicker">02 / BUILT FOR THE EVERYDAY</div><div class="inside-grid"><div class="inside-copy reveal"><h2>Quietly capable.<br /><em>Easy to read.</em></h2><p>Useful details should feel close at hand, not buried. PulseNet keeps monitoring, controls, and logs in one consistent interface designed for everyday use.</p><ul class="check-list"><li><span>✓</span> Live network and process usage</li><li><span>✓</span> Searchable activity logs</li><li><span>✓</span> Customizable hosts and settings</li><li><span>✓</span> Dark, focused interface</li></ul><a class="button button-outline" href="https://github.com/SM8KE1/PulseNet">View the project <span>↗</span></a></div><div class="product-shot reveal"><div class="shot-halo"></div><div class="shot-window"><img src="https://github.com/user-attachments/assets/5c034c43-0ccd-453d-aa42-768ccf621cff" alt="PulseNet desktop dashboard showing network monitoring controls" loading="lazy" /><div class="shot-overlay"><span class="shot-dot"></span> PULSENET / APP PREVIEW</div></div><div class="shot-note"><span class="note-mark">✳</span><span>Everything you need.<br /><b>Nothing in the way.</b></span></div></div></div></section>
+      <section class="inside wrap" id="inside"><div class="section-kicker">02 / BUILT FOR THE EVERYDAY</div><div class="inside-grid"><div class="inside-copy reveal"><h2>Quietly capable.<br /><em>Easy to read.</em></h2><p>Useful details should feel close at hand, not buried. PulseNet keeps monitoring, controls, and logs in one consistent interface designed for everyday use.</p><ul class="check-list"><li><span>✓</span> Live network and process usage</li><li><span>✓</span> Searchable activity logs</li><li><span>✓</span> Customizable hosts and settings</li><li><span>✓</span> Dark, focused interface</li></ul><a class="button button-outline" href="https://github.com/SM8KE1/PulseNet">View the project <span>↗</span></a></div><div class="product-shot reveal"><div class="shot-halo"></div><div class="shot-window"><img src="./assets/pulsenet-dashboard.webp" alt="PulseNet desktop app showing ping monitoring, DNS, speed tests, network usage, and settings" loading="lazy" /><div class="shot-overlay"><span class="shot-dot"></span> PULSENET / APP PREVIEW</div></div><div class="shot-note"><span class="note-mark">✳</span><span>Everything you need.<br /><b>Nothing in the way.</b></span></div></div></div></section>
 
       <section class="platforms" id="platforms"><div class="wrap platform-inner"><div class="section-kicker">03 / YOUR DESKTOP, YOUR WAY</div><div class="platform-head"><h2>Ready when<br /><em>you are.</em></h2><p>Get PulseNet for Windows or Linux from the latest release. The project is open source, so you can explore how it works, too.</p></div><div class="platform-cards"><a class="platform-card" href="https://github.com/SM8KE1/PulseNet/releases/latest"><span class="platform-icon">⊞</span><span class="platform-info"><b>Windows</b><small>Setup or MSI · x64</small></span><span class="platform-arrow">↗</span></a><a class="platform-card" href="https://github.com/SM8KE1/PulseNet/releases/latest"><span class="platform-icon linux-icon">◉</span><span class="platform-info"><b>Linux</b><small>Debian, Ubuntu &amp; RPM</small></span><span class="platform-arrow">↗</span></a><a class="platform-card source-card" href="https://github.com/SM8KE1/PulseNet"><span class="platform-icon">⌘</span><span class="platform-info"><b>Open source</b><small>Explore on GitHub</small></span><span class="platform-arrow">↗</span></a></div><p class="platform-foot">Downloads and installation notes are available on GitHub.</p></div></section>
     </main>
 
-    <footer class="footer wrap"><a class="brand" href="#top"><span class="brand-mark"><i></i><i></i><i></i></span><span>Pulse<span class="brand-light">Net</span></span></a><span class="footer-note">A clearer view of your network.</span><div class="footer-links"><a href="https://github.com/SM8KE1/PulseNet">GitHub ↗</a><span>© <span id="year"></span> PulseNet</span></div></footer>
+    <footer class="footer wrap"><a class="brand" href="#top"><img class="brand-mark" src="./icon.png" alt="" /><span>Pulse<span class="brand-light">Net</span></span></a><span class="footer-note">A clearer view of your network.</span><div class="footer-links"><a href="https://github.com/SM8KE1/PulseNet">GitHub ↗</a><span>© <span id="year"></span> PulseNet</span></div></footer>
   </body>
 </html>

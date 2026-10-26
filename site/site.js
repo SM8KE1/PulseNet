@@ -17,15 +17,15 @@ if ('IntersectionObserver' in window) {
 }
 
 const visual = document.querySelector('.hero-visual');
-const globe = document.querySelector('.globe');
-if (visual && globe && window.matchMedia('(pointer: fine)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+const scene = document.querySelector('.network-scene');
+if (visual && scene && window.matchMedia('(pointer: fine)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
   visual.addEventListener('pointermove', (event) => {
     const rect = visual.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width - 0.5;
     const y = (event.clientY - rect.top) / rect.height - 0.5;
-    globe.style.transform = `translate(-50%, -52%) rotateX(${9 - y * 7}deg) rotateY(${-14 + x * 10}deg)`;
+    scene.style.transform = `rotateX(${6 - y * 5}deg) rotateY(${-5 + x * 8}deg)`;
   });
   visual.addEventListener('pointerleave', () => {
-    globe.style.transform = '';
+    scene.style.transform = '';
   });
 }
