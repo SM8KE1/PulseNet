@@ -1,0 +1,57 @@
+name: Publish website
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'site/**'
+      - '.github/workflows/site-pages.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Preserve the published APT repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_url="https://sm8ke1.github.io/PulseNet/apt"
+          apt_dir="site/apt"
+          mkdir -p "$apt_dir/dists/stable/main/binary-amd64"
+          curl -fsSL "$base_url/pulsenet-archive-keyring.gpg" -o "$apt_dir/pulsenet-archive-keyring.gpg"
+          curl -fsSL "$base_url/dists/stable/Release" -o "$apt_dir/dists/stable/Release"
+          curl -fsSL "$base_url/dists/stable/InRelease" -o "$apt_dir/dists/stable/InRelease"
+          curl -fsSL "$base_url/dists/stable/Release.gpg" -o "$apt_dir/dists/stable/Release.gpg"
+          curl -fsSL "$base_url/dists/stable/main/binary-amd64/Packages" -o "$apt_dir/dists/stable/main/binary-amd64/Packages"
+          curl -fsSL "$base_url/dists/stable/main/binary-amd64/Packages.gz" -o "$apt_dir/dists/stable/main/binary-amd64/Packages.gz"
+          package_path="$(awk '/^Filename: / { print $2; exit }' "$apt_dir/dists/stable/main/binary-amd64/Packages")"
+          test -n "$package_path"
+          mkdir -p "$apt_dir/$(dirname "$package_path")"
+          curl -fsSL "$base_url/$package_path" -o "$apt_dir/$package_path"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

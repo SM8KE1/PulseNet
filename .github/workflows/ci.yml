@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'site/**'
+      - '.github/workflows/site-pages.yml'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/linux-build.yml'
   pull_request:
     branches:
       - main
