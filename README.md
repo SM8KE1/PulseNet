@@ -66,7 +66,7 @@ curl -fsSLO https://sm8ke1.github.io/PulseNet/apt/pulsenet-archive-keyring.gpg
 sudo install -D -m 0644 pulsenet-archive-keyring.gpg /usr/share/keyrings/pulsenet-archive-keyring.gpg
 echo "deb [arch=amd64 signed-by=/usr/share/keyrings/pulsenet-archive-keyring.gpg] https://sm8ke1.github.io/PulseNet/apt stable main" | sudo tee /etc/apt/sources.list.d/pulsenet.list
 sudo apt update
-sudo apt install pulsenet
+sudo apt install pulse-net
 rm pulsenet-archive-keyring.gpg
 ```
 
